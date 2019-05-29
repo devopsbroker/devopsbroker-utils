@@ -1,0 +1,121 @@
+#!/bin/bash
+
+#
+# udev - DevOpsBroker utility for viewing and testing udev rules for devices
+#
+# Copyright (C) 2018 Edward Smith <edwardsmith@devopsbroker.org>
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# -----------------------------------------------------------------------------
+# Developed on Ubuntu 16.04.5 LTS running kernel.osrelease = 4.15.0-33
+#
+# -----------------------------------------------------------------------------
+#
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Preprocessing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Load /etc/devops/ansi.conf if ANSI_CONFIG is unset
+if [ -z "$ANSI_CONFIG" ] && [ -f /etc/devops/ansi.conf ]; then
+	source /etc/devops/ansi.conf
+fi
+
+${ANSI_CONFIG?"[1;91mCannot load '/etc/devops/ansi.conf': No such file[0m"}
+
+# Load /etc/devops/exec.conf if EXEC_CONFIG is unset
+if [ -z "$EXEC_CONFIG" ] && [ -f /etc/devops/exec.conf ]; then
+	source /etc/devops/exec.conf
+fi
+
+${EXEC_CONFIG?"[1;91mCannot load '/etc/devops/exec.conf': No such file[0m"}
+
+# Load /etc/devops/functions.conf if FUNC_CONFIG is unset
+if [ -z "$FUNC_CONFIG" ] && [ -f /etc/devops/functions.conf ]; then
+	source /etc/devops/functions.conf
+fi
+
+${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m"}
+
+################################## Variables ##################################
+
+## Bash exec variables
+EXEC_UDEVADM=/sbin/udevadm
+
+## Options
+command="$1"
+DEVICE_NODE="$2"
+
+## Variables
+validCommands=('env' 'info' 'test' 'trigger')
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Display usage if no parameters given
+if [ -z "$command" ]; then
+	printUsage 'udev { env | info | test | trigger }'
+	exit 1
+fi
+
+# Ensure the first parameter is a valid command
+if [ $(containsElement "$command" "${validCommands[@]}") != '0' ]; then
+	printError 'udev' "Invalid command: '$command'"
+	echo
+	printUsage 'udev { env | info | test | trigger }'
+
+	exit 1
+fi
+
+# Display usage if no device node parameter given
+if [[ "$command" =~ (env|info|test) ]] && [ -z "$DEVICE_NODE" ]; then
+	printUsage "udev $command DEVICE_NODE"
+	exit 1
+fi
+
+if [ ! -z "$DEVICE_NODE" ]; then
+	devicePath="$($EXEC_UDEVADM info -q path -n $DEVICE_NODE 2>/dev/null)"
+
+	# Display error if device node parameter is invalid
+	if [ -z "$devicePath" ]; then
+		printError 'udev' "Cannot access '$DEVICE_NODE': No such device node"
+		echo
+		printUsage "udev $command DEVICE_NODE"
+
+		exit 1
+	fi
+
+	echo
+	echo "Device Path: $devicePath"
+fi
+
+################################### Actions ###################################
+
+if [ "$command" == 'env' ]; then
+
+	$EXEC_UDEVADM info -q all -p "$devicePath"
+
+elif [ "$command" == 'info' ]; then
+
+	$EXEC_UDEVADM info -a -p "$devicePath"
+
+elif [ "$command" == 'test' ]; then
+
+	$EXEC_UDEVADM test "$devicePath"
+
+elif [ "$command" == 'trigger' ]; then
+
+	$EXEC_UDEVADM trigger
+
+fi
+
+exit 0

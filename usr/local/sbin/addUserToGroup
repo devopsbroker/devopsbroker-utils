@@ -1,0 +1,135 @@
+#!/bin/bash
+
+#
+# addUserToGroup - DevOpsBroker utility for adding an existing user to an
+#		   existing group
+#
+# Copyright (C) 2018 Edward Smith <edwardsmith@devopsbroker.org>
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# -----------------------------------------------------------------------------
+# Developed on Ubuntu 16.04.4 LTS running kernel.osrelease = 4.13.0-43
+#
+# Adds the user to the group. If the user is not specified, then $SUDO_USER is
+# used instead.
+#
+# Parameters:
+#   $1: Username (optional)
+#   $2: Group name
+# -----------------------------------------------------------------------------
+#
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Preprocessing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Load /etc/devops/ansi.conf if ANSI_CONFIG is unset
+if [ -z "$ANSI_CONFIG" ] && [ -f /etc/devops/ansi.conf ]; then
+	source /etc/devops/ansi.conf
+fi
+
+${ANSI_CONFIG?"[1;91mCannot load '/etc/devops/ansi.conf': No such file[0m"}
+
+# Load /etc/devops/exec.conf if EXEC_CONFIG is unset
+if [ -z "$EXEC_CONFIG" ] && [ -f /etc/devops/exec.conf ]; then
+	source /etc/devops/exec.conf
+fi
+
+${EXEC_CONFIG?"[1;91mCannot load '/etc/devops/exec.conf': No such file[0m"}
+
+# Load /etc/devops/functions.conf if FUNC_CONFIG is unset
+if [ -z "$FUNC_CONFIG" ] && [ -f /etc/devops/functions.conf ]; then
+	source /etc/devops/functions.conf
+fi
+
+${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m"}
+
+# Display error if not running as root
+if [ "$USER" != 'root' ]; then
+	printError 'addUserToGroup' 'Permission denied (you must be root)'
+	exit 1
+fi
+
+################################## Variables ##################################
+
+# Options
+numOptions="$#"
+user="$1"
+group="$2"
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Display usage if no parameters given
+if [ $numOptions -eq 0 ]; then
+  printUsage "addUserToGroup ${gold}[USER] ${yellow}GROUP"
+  echo
+
+  exit 1
+elif [ $numOptions -eq 1 ]; then
+
+  # First parameter is a valid group on the system
+  if [ ! -z "$($EXEC_GETENT group $1)" ]; then
+    user=$SUDO_USER
+    group="$1"
+  else
+    if [ ! -z "$($EXEC_GETENT passwd $1)" ]; then
+      printUsage "addUserToGroup $1 GROUP"
+    else
+      printError "addUserToGroup" "Cannot find '$1': No such user or group"
+      echo
+      printUsage "addUserToGroup ${gold}[USER] ${yellow}GROUP"
+    fi
+
+    exit 1
+  fi
+
+else
+
+  # Display error if user is invalid
+  if [ -z "$($EXEC_GETENT passwd $user)" ]; then
+    printError "addUserToGroup" "Cannot find '$user': No such user"
+    echo
+    printUsage 'addUserToGroup USER GROUP'
+
+    exit 1
+  fi
+
+  # Display error if group is invalid
+  if [ -z "$($EXEC_GETENT group $group)" ]; then
+    printError "addUserToGroup" "Cannot find '$group': No such group"
+    echo
+    printUsage "addUserToGroup $user GROUP"
+
+    exit 1
+  fi
+
+fi
+
+################################### Actions ###################################
+
+# Get the list of all groups defined for the user
+userGroupList=($($EXEC_GROUPS $user))
+listLength=${#userGroupList[@]}
+
+for ((i=2; i < $listLength; i++)); do
+  if [ "$group" == ${userGroupList[i]} ]; then
+    echo "${bold}addUserToGroup: ${yellow}User '${green}$user${yellow}' already a member of the '${green}$group${yellow}' group"
+
+    exit 0
+  fi
+done
+
+# Add user to group
+$EXEC_ADDUSER $user $group
+
+exit 0

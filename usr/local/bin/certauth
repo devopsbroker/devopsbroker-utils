@@ -1,0 +1,484 @@
+#!/bin/bash
+
+#
+# certauth - DevOpsBroker script for creating and managing a local CA
+#
+# Copyright (C) 2018-2019 Edward Smith <edwardsmith@devopsbroker.org>
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# -----------------------------------------------------------------------------
+# Developed on Ubuntu 16.04.5 LTS running kernel.osrelease = 4.15.0-33
+#
+# TODO: Revoke certificates and create CRLs
+# -----------------------------------------------------------------------------
+#
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Preprocessing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Load /etc/devops/ansi.conf if ANSI_CONFIG is unset
+if [ -z "$ANSI_CONFIG" ] && [ -f /etc/devops/ansi.conf ]; then
+	source /etc/devops/ansi.conf
+fi
+
+${ANSI_CONFIG?"[1;91mCannot load '/etc/devops/ansi.conf': No such file[0m"}
+
+# Load /etc/devops/exec.conf if EXEC_CONFIG is unset
+if [ -z "$EXEC_CONFIG" ] && [ -f /etc/devops/exec.conf ]; then
+	source /etc/devops/exec.conf
+fi
+
+${EXEC_CONFIG?"[1;91mCannot load '/etc/devops/exec.conf': No such file[0m"}
+
+# Load /etc/devops/functions.conf if FUNC_CONFIG is unset
+if [ -z "$FUNC_CONFIG" ] && [ -f /etc/devops/functions.conf ]; then
+	source /etc/devops/functions.conf
+fi
+
+${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m"}
+
+# Load /etc/devops/functions-io.conf if FUNC_IO_CONFIG is unset
+if [ -z "$FUNC_IO_CONFIG" ] && [ -f /etc/devops/functions-io.conf ]; then
+	source /etc/devops/functions-io.conf
+fi
+
+${FUNC_IO_CONFIG?"[1;91mCannot load '/etc/devops/functions-io.conf': No such file[0m"}
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Robustness ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+set -o errexit                 # Exit if any statement returns a non-true value
+set -o nounset                 # Exit if use an uninitialised variable
+set -o pipefail                # Exit if any statement in a pipeline returns a non-true value
+IFS=$'\n\t'                    # Default the Internal Field Separator to newline and tab
+
+scriptName='certauth'
+
+################################## Variables ##################################
+
+## Bash exec variables
+EXEC_OPENSSL=/usr/bin/openssl
+EXEC_TOUCH=/usr/bin/touch
+
+## Options
+command="$1"
+
+## Variables
+sudoCommands=('create' 'signcsr')
+validCommands=(${sudoCommands[@]} 'fingerprint' 'gencsr' 'genrsa' 'inspect' 'verifycrt')
+
+domainName=''
+fileName=''
+keyFile=''
+crtFile=''
+csrFile=''
+dirName=''
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Display usage if no parameters given
+if [ -z "$command" ]; then
+	printUsage 'certauth { create | fingerprint | gencsr | genrsa | inspect | signcsr | verifycrt | verifyssl }'
+	exit 1
+fi
+
+# Ensure the first parameter is a valid command
+if [ $(containsElement "$command" "${validCommands[@]}") != '0' ]; then
+	printError 'certauth' "Invalid command: '$command'"
+	echo
+	printUsage 'certauth { create | fingerprint | gencsr | genrsa | inspect | signcsr | verifycrt | verifyssl }'
+
+	exit 1
+fi
+
+# Display error if incorrect usage of sudo
+if [ $(containsElement "$command" "${sudoCommands[@]}") == '0' ]; then
+ 	if [ "$USER" != 'root' ]; then
+		printError 'certauth' 'Permission denied (you must be root)'
+		exit 1
+	fi
+elif [ "$USER" == 'root' ]; then
+	printError 'certauth' 'Permission denied (you cannot be root)'
+	exit 1
+fi
+
+# Create a CA or sign a CSR
+if [[ "$command" =~ ^(create|signcsr)$ ]]; then
+
+	dirName='/opt/ca'
+	keyFile='ca.key'
+	crtFile='ca.crt'
+
+	# Exit if 'create' and the CA already exists
+	if [ "$command" == 'create' ]; then
+		if [ -d "$dirName" ]; then
+			printInfo "Certificate Authority '$dirName' already exists"
+			printInfo "Exiting"
+			exit 1
+		fi
+
+		csrFile='ca.csr'
+
+	elif [ "$command" == 'signcsr' ]; then
+		if [ ! -d "$dirName" ]; then
+			printInfo "Certificate Authority '$dirName' does not exist"
+			printInfo "Exiting"
+			exit 1
+		fi
+
+		csrFile="$2"
+
+		errorMessage=$(isValidFile 'certauth' "$csrFile")
+
+		# Display error if CSR_FILE parameter is missing or invalid
+		if [ "$errorMessage" != '0' ]; then
+			echo "$errorMessage"
+			echo
+			printUsage "certauth signcsr CSR_FILE"
+
+			exit 1
+		fi
+	fi
+
+elif [ "$command" == 'inspect' ]; then
+
+	fileName="$2"
+
+	errorMessage=$(isValidFile 'certauth' "$fileName")
+
+	# Display error if FILE parameter is missing or invalid
+	if [ "$errorMessage" != '0' ]; then
+		echo "$errorMessage"
+		echo
+		printUsage "certauth inspect FILE"
+
+		exit 1
+	fi
+
+else
+
+	dirName="$HOME"/.ssl
+
+	if [ "$command" == 'gencsr' ]; then
+
+		# Process command-line options
+		while [[ "$2" == -* ]]; do
+
+			if [ "$2" == '-k' ]; then
+
+				errorMessage=$(isValidFile 'certauth' "$3")
+
+				# Display error if KEY_FILE parameter is missing or invalid
+				if [ "$errorMessage" != '0' ]; then
+					echo "$errorMessage"
+					echo
+					printUsage "certauth gencsr ${gold}-k KEY_FILE ${yellow}DOMAIN_NAME"
+
+					exit 1
+				fi
+
+				# keyFile is the third command-line parameter
+				keyFile="$3"
+				shift 2
+
+			elif [ "$2" == '-crt' ]; then
+
+				crtFile='true'
+				shift 1
+
+			else
+				# Display error and help if option parameter is not valid
+				printError 'certauth' "Invalid option: '$2'"
+				echo
+				printUsage "certauth gencsr ${gold}[-crt] [-k KEY_FILE] ${yellow}DOMAIN_NAME"
+
+				exit 1
+			fi
+
+		done
+	elif [ "$command" == 'fingerprint' ] || [ "$command" == 'verifycrt' ]; then
+		crtFile='true'
+	fi
+
+	domainName="$2"
+
+	# Display error and usage if DOMAIN_NAME parameter is missing
+	if [ -z "$domainName" ]; then
+		printError 'certauth' 'Missing DOMAIN_NAME parameter'
+		echo
+		printUsage $([ -z "$keyFile" ] && echo "certauth $command DOMAIN_NAME" || echo "certauth gencsr ${gold}-f $keyFile ${yellow}DOMAIN_NAME")
+
+		exit 1
+	fi
+
+	if [ "$command" != 'verifyssl' ]; then
+
+		if [ -z "$keyFile" ]; then
+			keyFile="${domainName}.key"
+		fi
+
+		if [ "$crtFile" == 'true' ]; then
+
+			crtFile="${domainName}.crt"
+
+			# Display error if crtFile cannot be found
+			if [ ! -f "$dirName/$crtFile" ]; then
+				printError 'certauth' "Cannot access '$dirName/$crtFile': No such file"
+				echo
+
+				exit 1
+			fi
+
+			# Display error if keyFile cannot be found
+			if [ ! -f "$dirName/$keyFile" ]; then
+				printError 'certauth' "Cannot access '$dirName/$keyFile': No such private key"
+				echo
+				printUsage "certauth $command ${gold}[-crt] [-k KEY_FILE] ${yellow}DOMAIN_NAME"
+
+				exit 1
+			fi
+		fi
+
+		csrFile="${domainName}.csr"
+	fi
+
+fi
+
+################################### Actions ###################################
+
+# Create the SSL user directory structure
+if [ "$USER" != 'root' ] && [ ! -z "$dirName" ]; then
+
+	# Create $HOME/.ssl directory
+	if [ ! -d "$dirName" ]; then
+		printInfo "Creating $dirName directory"
+		$EXEC_MKDIR --parents --mode=0700 "$dirName"
+	fi
+
+fi
+
+if [ "$command" == 'gencsr' ]; then
+
+	# Generate a new CSR from existing CRT and Key
+	if [ ! -z "$crtFile" ]; then
+
+		printBanner "Generate Certificate Signing Request from existing Certificate and Key"
+
+		if [ -f "$dirName/$csrFile" ]; then
+			printInfo "Moving existing Certificate Signing Request to '${domainName}.csr.old'"
+			$EXEC_MV "$dirName/$csrFile" "$dirName/${domainName}.csr.old"
+		fi
+
+		printInfo "Generating Certificate Signing Request from '$crtFile' and '$keyFile'"
+
+		$EXEC_OPENSSL x509 -x509toreq -in "$dirName/$crtFile" \
+			-signkey "$dirName/$keyFile" -out "$dirName/$csrFile"
+	else
+
+		if [ ! -f "$dirName/$keyFile" ]; then
+			printBanner "Generate RSA private key for '$domainName' domain"
+
+			$EXEC_OPENSSL genrsa -out "$dirName/$keyFile" -rand /dev/urandom 2048
+			/bin/chmod 400 "$dirName/$keyFile"
+
+			printBanner "Extract RSA public key from private key '$keyFile'"
+
+			$EXEC_OPENSSL rsa -in "$dirName/$keyFile" -pubout -out "$dirName/${domainName}.pub"
+			/bin/chmod 400 "$dirName/${domainName}.pub"
+		fi
+
+		printBanner "Generate Certificate Signing Request for '$domainName' domain"
+
+		$EXEC_OPENSSL req -new -key "$dirName/$keyFile" \
+			-out "$dirName/$csrFile" -config /etc/ssl/req.conf
+	fi
+
+	/bin/chmod 400 "$dirName/$csrFile"
+
+elif [ "$command" == 'inspect' ]; then
+
+	mapfile -t fileData < <($EXEC_CAT "$fileName")
+
+	if [[ "${fileData[0]}" =~ "BEGIN CERTIFICATE REQUEST" ]]; then
+		printBanner "Inspect Certificate Signing Request '$fileName'"
+
+		printInfo 'Verifying Certificate Signing Request'
+		$EXEC_OPENSSL req -in "$fileName" -noout -verify
+		echo
+
+		$EXEC_OPENSSL req -in "$fileName" -noout -text
+
+	elif [[ "${fileData[0]}" =~ "BEGIN RSA PRIVATE KEY" ]]; then
+		printBanner "Inspect RSA private key '$fileName'"
+
+		printInfo 'Checking RSA private key consistency'
+		$EXEC_OPENSSL rsa -in "$fileName" -noout -check
+		echo
+
+		printInfo 'RSA private key components'
+		$EXEC_OPENSSL rsa -in "$fileName" -noout -text
+
+	elif [[ "${fileData[0]}" =~ "BEGIN PUBLIC KEY" ]]; then
+		printBanner "Inspect RSA public key '$fileName'"
+
+		$EXEC_OPENSSL rsa -pubin -in "$fileName" -noout -text
+
+	elif [ "${fileData[0]}" == 'Certificate:' ]; then
+		printBanner "Inspect Signed Certificate '$fileName'"
+
+		$EXEC_OPENSSL x509 -in "$fileName" -noout -text
+
+	else
+		printError 'certauth' "Unknown file type '$fileName'"
+		echo
+		printUsage "certauth inspect FILE"
+
+		exit 1
+	fi
+
+elif [ "$command" == 'signcsr' ]; then
+
+	CSR_INFO=( $($EXEC_SCRIPTINFO "$csrFile") )
+	CSR_DIR="${CSR_INFO[0]}"
+	CSR_FILE="${CSR_INFO[1]}"
+	CRT_FILE="$CSR_DIR/${CSR_FILE/%.csr/.crt}"
+
+	printBanner "Sign Certificate Signing Request '$csrFile'"
+
+	printInfo 'Copying CSR to Certificate Authority'
+	$EXEC_CP "$csrFile" "$dirName"/csreqs
+	echo
+
+	printInfo 'Verifying Certificate Signing Request'
+	$EXEC_OPENSSL req -in "$dirName/csreqs/$CSR_FILE" -noout -verify
+	echo
+
+	printInfo 'Signing Certificate Signing Request'
+	$EXEC_OPENSSL ca -config "$dirName"/ca.conf -in "$dirName/csreqs/$CSR_FILE" \
+		-out "$CRT_FILE"
+
+	if [ -f "$CRT_FILE" ]; then
+		/bin/chown $SUDO_USER:$SUDO_USER "$CRT_FILE"
+		/bin/chmod 400 "$CRT_FILE"
+	fi
+
+elif [ "$command" == 'verifycrt' ]; then
+
+	printBanner "Verify Signed Certificate '$crtFile'"
+
+	crtModulus=$($EXEC_OPENSSL x509 -in "$dirName/$crtFile" -noout -modulus)
+	keyModulus=$($EXEC_OPENSSL rsa -in "$dirName/$keyFile" -noout -modulus)
+
+	if [ "$crtModulus" == "$keyModulus" ]; then
+		printInfo "Signed certificate verified with private key '$keyFile'"
+	else
+		printError 'certauth' "Signed certificate '$crtFile' does not match private key '$keyFile'"
+		exit 1
+	fi
+
+elif [ "$command" == 'fingerprint' ]; then
+
+	printBanner "Fingerprint Signed Certificate '$crtFile'"
+
+	$EXEC_OPENSSL x509 -in "$dirName/$crtFile" -noout -fingerprint -sha256
+
+elif [ "$command" == 'verifyssl' ]; then
+
+	printBanner "Verify SSL Connection to '$domainName'"
+
+	if [[ ! "$domainName" =~ :[0-9]+$ ]]; then
+		domainName="${domainName}:443"
+	fi
+
+	$EXEC_OPENSSL s_client -connect ${domainName}
+
+elif [ "$command" == 'genrsa' ]; then
+
+	if [ ! -f "$dirName/$keyFile" ]; then
+		printBanner "Generate RSA private key for '$domainName' domain"
+
+		$EXEC_OPENSSL genrsa -out "$dirName/$keyFile" -rand /dev/urandom 2048
+		/bin/chmod 400 "$dirName/$keyFile"
+	else
+		printInfo "RSA private key '$keyFile' already exists: skipping private key generation"
+	fi
+
+	if [ ! -f "$dirName/${domainName}.pub" ]; then
+		printBanner "Extract RSA public key from private key '$keyFile'"
+
+		$EXEC_OPENSSL rsa -in "$dirName/$keyFile" -pubout -out "$dirName/${domainName}.pub"
+		/bin/chmod 400 "$dirName/${domainName}.pub"
+	else
+		printInfo "RSA public key '${domainName}.pub' already exists: skipping public key extraction"
+	fi
+
+elif [ "$command" == 'create' ]; then
+
+	printBanner "Create Local Certificate Authority"
+
+	# Create the local CA directory structure
+	printInfo "Creating $dirName directory"
+	$EXEC_MKDIR --parents --mode=0700 "$dirName"
+
+	printInfo "Creating $dirName/certsdb directory"
+	$EXEC_MKDIR --parents --mode=0700 "$dirName"/certsdb
+
+	printInfo "Creating $dirName/csreqs directory"
+	$EXEC_MKDIR --parents --mode=0700 "$dirName"/csreqs
+
+	printInfo "Creating $dirName/crl directory"
+	$EXEC_MKDIR --parents --mode=0700 "$dirName"/crl
+
+	printInfo "Creating $dirName/private directory"
+	$EXEC_MKDIR --parents --mode=0700 "$dirName"/private
+
+	echo
+
+	printInfo "Creating signed certificate database"
+	$EXEC_TOUCH "$dirName"/index.txt
+	/bin/chmod 644 "$dirName"/index.txt
+
+	printInfo "Copying default 'ca.conf' configuration"
+	$EXEC_CP /etc/ssl/ca.conf "$dirName"
+	/bin/chmod 600 "$dirName"/ca.conf
+
+	printInfo "Seeding private RANDFILE"
+	$EXEC_DD if=/dev/urandom of="$dirName"/private/.rand bs=256 count=1
+	/bin/chmod 600 "$dirName"/private/.rand
+
+	echo
+
+	printInfo "Generating Certificate Authority RSA key"
+	$EXEC_OPENSSL genrsa -out "$dirName"/private/$keyFile -rand /dev/urandom 2048
+	/bin/chmod 400 "$dirName"/private/$keyFile
+
+	echo
+
+	printInfo "Generating Certificate Authority CSR"
+	$EXEC_OPENSSL req -new -key "$dirName"/private/$keyFile \
+		-out "$dirName"/$csrFile -config "$dirName"/ca.conf
+	/bin/chmod 400 "$dirName"/$csrFile
+
+	echo
+
+	printInfo "Self-signing the Certificate Authority CSR"
+	$EXEC_OPENSSL ca -create_serial -in "$dirName"/$csrFile \
+		-out "$dirName"/$crtFile -keyfile "$dirName"/private/$keyFile \
+		-selfsign -config "$dirName"/ca.conf -extensions ca_cert
+	/bin/chmod 400 "$dirName"/$crtFile
+
+fi
+
+echo
+
+exit 0

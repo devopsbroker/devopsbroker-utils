@@ -1,0 +1,763 @@
+#!/bin/bash
+
+#
+# git-repo - DevOpsBroker utility for managing Git repositories
+#
+# Copyright (C) 2018-2019 Edward Smith <edwardsmith@devopsbroker.org>
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# -----------------------------------------------------------------------------
+# Developed on Ubuntu 16.04.4 LTS running kernel.osrelease = 4.13.0-45
+#
+# General purpose Git repository management utility.
+#
+# Name feature branches by convention:
+#   o Use a consistent naming convention for feature branches to identify the
+#     work done in the branch. You can also include other information in the
+#     branch name, such as who created the branch.
+#
+#   o Some suggestions for naming feature branches:
+#     users/username/description
+#     users/username/workitem
+#     bugfix/description
+#     features/feature-name
+#     features/feature-area/feature-name
+#     hotfix/description
+#
+# Use release branches:
+#   o Create a release branch from the master branch as you get close to your
+#     release or other milestone, such as the end of a sprint. Give this branch
+#     a clear name associating it with the release, for example:
+#
+#     release/1.0.0
+# -----------------------------------------------------------------------------
+#
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Preprocessing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Load /etc/devops/ansi.conf if ANSI_CONFIG is unset
+if [ -z "$ANSI_CONFIG" ] && [ -f /etc/devops/ansi.conf ]; then
+	source /etc/devops/ansi.conf
+fi
+
+${ANSI_CONFIG?"[1;91mCannot load '/etc/devops/ansi.conf': No such file[0m"}
+
+# Load /etc/devops/exec.conf if EXEC_CONFIG is unset
+if [ -z "$EXEC_CONFIG" ] && [ -f /etc/devops/exec.conf ]; then
+	source /etc/devops/exec.conf
+fi
+
+${EXEC_CONFIG?"[1;91mCannot load '/etc/devops/exec.conf': No such file[0m"}
+
+# Load /etc/devops/functions.conf if FUNC_CONFIG is unset
+if [ -z "$FUNC_CONFIG" ] && [ -f /etc/devops/functions.conf ]; then
+	source /etc/devops/functions.conf
+fi
+
+${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m"}
+
+# Load /etc/devops/functions-io.conf if FUNC_IO_CONFIG is unset
+if [ -z "$FUNC_IO_CONFIG" ] && [ -f /etc/devops/functions-io.conf ]; then
+	source /etc/devops/functions-io.conf
+fi
+
+${FUNC_IO_CONFIG?"[1;91mCannot load '/etc/devops/functions-io.conf': No such file[0m"}
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Robustness ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+set -o errexit                 # Exit if any statement returns a non-true value
+set -o nounset                 # Exit if use an uninitialised variable
+set -o pipefail                # Exit if any statement in a pipeline returns a non-true value
+IFS=$'\n\t'                    # Default the Internal Field Separator to newline and tab
+
+scriptName='git-repo'
+
+################################## Functions ##################################
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     showHelp
+# Description:  Displays help message to the user
+# -----------------------------------------------------------------------------
+function showHelp() {
+	# BEGIN showHelp function
+
+	if [ -z "$command" ]; then
+		printUsage "$scriptName COMMAND ${gold}[OPTION...]"
+		echo
+		printUsage 'false' "$scriptName amend ${gold}FILE"
+		printUsage 'false' "$scriptName config ${gold}[OPTION...]"
+		printUsage 'false' "$scriptName create-branch ${gold}BRANCH_NAME"
+		printUsage 'false' "$scriptName delete-branch ${gold}BRANCH_NAME"
+		printUsage 'false' "$scriptName diff ${gold}COMMIT_NUM FILE"
+		printUsage 'false' "$scriptName discard ${gold}FILE"
+		printUsage 'false' "$scriptName history ${gold}[FILE]"
+		printUsage 'false' "$scriptName list-branches"
+		printUsage 'false' "$scriptName list-commits"
+		printUsage 'false' "$scriptName list-config"
+		printUsage 'false' "$scriptName list-tags ${gold}[PATTERN]"
+		printUsage 'false' "$scriptName release ${gold}BRANCH_NAME"
+		printUsage 'false' "$scriptName restore ${gold}FILE"
+		printUsage 'false' "$scriptName stat ${gold}[COMMIT_NUM]"
+		printUsage 'false' "$scriptName test-ssh"
+		printUsage 'false' "$scriptName update ${gold}BRANCH_NAME"
+		echo
+	elif [ "$command" == 'amend' ]; then
+		printUsage "$scriptName amend ${gold}FILE"
+		echo ${romantic}
+		echo 'Adds more changes to the very last commit'${reset}
+	elif [ "$command" == 'config' ]; then
+		printUsage "$scriptName config ${gold}[OPTION...]"
+		echo ${romantic}
+		echo 'Configure the name and email address for the local Git repository'
+		echo
+		echo ${bold}${white}'Valid Options:'${reset}
+		echo -e ${bold}${yellow}'  -e EMAIL_ADDR\t'     ${romantic}'The email address to use'
+		echo -e ${bold}${yellow}'  -n FULL_NAME\t'      ${romantic}'The name to use'
+		echo ${reset}
+	elif [ "$command" == 'create-branch' ]; then
+		printUsage "$scriptName create-branch ${gold}BRANCH_NAME"
+		echo ${romantic}
+		echo 'Creates a new Git branch from the current branch'${reset}
+	elif [ "$command" == 'delete-branch' ]; then
+		printUsage "$scriptName delete-branch ${gold}BRANCH_NAME"
+		echo ${romantic}
+		echo 'Delete existing branch from the current Git repository'${reset}
+	elif [ "$command" == 'diff' ]; then
+		printUsage "$scriptName diff ${gold}COMMIT_NUM FILE"
+		echo ${romantic}
+		echo 'Displays commit history differences for the given file'${reset}
+	elif [ "$command" == 'discard' ]; then
+		printUsage "$scriptName discard ${gold}FILE"
+		echo ${romantic}
+		echo "Discards any uncommitted changes for a given file in the Git repository ${bold}${white}(${red}cannot be undone${white})"${reset}
+	elif [ "$command" == 'history' ]; then
+		printUsage "$scriptName history ${gold}[FILE]"
+		echo ${romantic}
+		echo 'View commit history for either the entire repository or a specific file'${reset}
+	elif [ "$command" == 'list-branches' ]; then
+		printUsage "$scriptName list-branches"
+		echo ${romantic}
+		echo 'List existing branches in the current Git repository'${reset}
+	elif [ "$command" == 'list-commits' ]; then
+		printUsage "$scriptName list-commits"
+		echo ${romantic}
+		echo 'List local commits that have not yet been pushed to the remote server'${reset}
+	elif [ "$command" == 'list-config' ]; then
+		printUsage "$scriptName list-config"
+		echo ${romantic}
+		echo 'List all configuration variables and their values for the current Git repository'${reset}
+	elif [ "$command" == 'list-tags' ]; then
+		printUsage "$scriptName list-tags ${gold}[PATTERN]"
+		echo ${romantic}
+		echo 'List all tags for the current branch'${reset}
+	elif [ "$command" == 'release' ]; then
+		printUsage "$scriptName release ${gold}BRANCH_NAME"
+		echo ${romantic}
+		echo 'Merges release branch into master and tags the release point'${reset}
+	elif [ "$command" == 'restore' ]; then
+		printUsage "$scriptName restore ${gold}FILE"
+		echo ${romantic}
+		echo "Restores a file deleted with 'git rm'"${reset}
+	elif [ "$command" == 'stat' ]; then
+		printUsage "$scriptName stat ${gold}[COMMIT_NUM]"
+		echo ${romantic}
+		echo 'View abbreviated statistics for all commits or for a single commit'${reset}
+	elif [ "$command" == 'test-ssh' ]; then
+		printUsage "$scriptName test-ssh"
+		echo ${romantic}
+		echo 'Tests GitHub SSH connection once SSH key is created and added to GitHub'${reset}
+	elif [ "$command" == 'update' ]; then
+		printUsage "$scriptName update ${gold}BRANCH_NAME"
+		echo ${romantic}
+		echo 'Incorporates changes from the remote repository into the current branch'${reset}
+	fi
+
+	# END showHelp function
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     validateAmend
+# Description:  Performs validation for the amend command
+#
+# Parameters:
+#   fileName    The file name to validate
+# -----------------------------------------------------------------------------
+function validateAmend() {
+	if [ "$fileName" ]; then
+		errorMessage=$(isValidFile $scriptName "$fileName")
+
+		# Display error if file parameter is missing or invalid
+		if [ "$errorMessage" != '0' ]; then
+			echo "$errorMessage"
+			echo
+			printUsage "$scriptName $command ${gold}FILE"
+
+			exit 1
+		fi
+	fi
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     validateConfig
+# Description:  Performs validation for the config command
+#
+# Parameters:
+#   $@          The command-line options to validate
+# -----------------------------------------------------------------------------
+function validateConfig() {
+	local option=${1:-}
+	fullname=''
+	useremail=''
+
+	# Process command-line options, if present
+	while [[ "$option" =~ ^- ]]; do
+		if [ "$option" == '-e' ]; then
+			option=${2:-}
+
+			# Display error if email address parameter is missing
+			if [ -z "$option" ]; then
+				printError $scriptName 'Missing user email parameter'
+				echo
+				printUsage "$scriptName $command ${gold}-e EMAIL_ADDR"
+
+				exit 1
+			fi
+
+			useremail="$option"
+			shift 2
+
+		elif [ "$option" == '-n' ]; then
+			option=${2:-}
+
+			# Display error if name parameter is missing
+			if [ -z "$option" ]; then
+				printError $scriptName 'Missing name parameter'
+				echo
+				printUsage "$scriptName $command ${gold}-n FULL_NAME"
+
+				exit 1
+			fi
+
+			fullname="$option"
+			shift 2
+
+		else
+			# Display error if invalid option
+			printError $scriptName "Invalid option: $option"
+			echo
+			showHelp
+
+			exit 1
+		fi
+	done
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     validateCreateBranch
+# Description:  Performs validation for the create-branch command
+#
+# Parameters:
+#   branchName  The name of the branch to create
+# -----------------------------------------------------------------------------
+function validateCreateBranch() {
+	if [ -z "$branchName" ]; then
+		printError $scriptName 'Missing BRANCH_NAME parameter'
+		echo
+		printUsage "$scriptName create-branch ${gold}BRANCH_NAME"
+
+		exit 1
+	else
+		doesBranchExist=$($EXEC_GIT branch --no-color --list $branchName)
+
+		if [ ! -z "$doesBranchExist" ]; then
+			printError $scriptName "Cannot create branch '$branchName': Git branch already exists"
+			echo
+			printUsage "$scriptName create-branch ${gold}BRANCH_NAME"
+
+			exit 1
+		fi
+	fi
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     validateDeleteBranch
+# Description:  Performs validation for the delete-branch command
+#
+# Parameters:
+#   branchName  The name of the branch to delete
+# -----------------------------------------------------------------------------
+function validateDeleteBranch() {
+	if [ -z "$branchName" ]; then
+		printError $scriptName 'Missing BRANCH_NAME parameter'
+		echo
+		printUsage "$scriptName delete-branch ${gold}BRANCH_NAME"
+
+		exit 1
+	else
+		doesBranchExist=$($EXEC_GIT branch --no-color --list $branchName)
+
+		if [ -z "$doesBranchExist" ]; then
+			printError $scriptName "Cannot delete branch '$branchName': No such Git branch"
+			echo
+			printUsage "$scriptName delete-branch ${gold}BRANCH_NAME"
+
+			exit 1
+		elif [ "$branchName" == 'master' ]; then
+			printError $scriptName "Cannot delete 'master' branch"
+			echo
+			printUsage "$scriptName delete-branch ${gold}BRANCH_NAME"
+
+			exit 1
+		fi
+	fi
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     validateDiff
+# Description:  Performs validation for the diff command
+#
+# Parameters:
+#   commitNum   The commit history number to examine
+#   fileName    The file name to validate
+# -----------------------------------------------------------------------------
+function validateDiff() {
+	if [ -z "$commitNum" ]; then
+		printError $scriptName 'Missing COMMIT_NUM parameter'
+		echo
+		printUsage "$scriptName diff ${gold}COMMIT_NUM FILE"
+
+		exit 1
+	elif [[ ! "$commitNum" =~ ^[a-f0-9]+$ ]]; then
+		printError $scriptName "Invalid commit number format: '$commitNum'"
+		echo
+		printUsage "$scriptName diff ${gold}COMMIT_NUM FILE"
+
+		exit 1
+	else
+		errorMessage=$(isValidFile $scriptName "$fileName")
+
+		# Display error if file parameter is missing or invalid
+		if [ "$errorMessage" != '0' ]; then
+			echo "$errorMessage"
+			echo
+			printUsage "$scriptName $command $commitNum ${gold}FILE"
+
+			exit 1
+		fi
+	fi
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     validateDiscard
+# Description:  Performs validation for the discard command
+#
+# Parameters:
+#   fileName    The file name to validate
+# -----------------------------------------------------------------------------
+function validateDiscard() {
+	errorMessage=$(isValidFile $scriptName "$fileName")
+
+	# Display error if file parameter is missing or invalid
+	if [ "$errorMessage" != '0' ]; then
+		echo "$errorMessage"
+		echo
+		printUsage "$scriptName $command ${gold}FILE"
+
+		exit 1
+	fi
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     validateHistory
+# Description:  Performs validation for the hisotry command
+#
+# Parameters:
+#   fileName    The file name to validate
+# -----------------------------------------------------------------------------
+function validateHistory() {
+	if [ "$fileName" ]; then
+		errorMessage=$(isValidFile $scriptName "$fileName")
+
+		# Display error if file parameter is missing or invalid
+		if [ "$errorMessage" != '0' ]; then
+			echo "$errorMessage"
+			echo
+			printUsage "$scriptName $command ${gold}[FILE]"
+
+			exit 1
+		fi
+	fi
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     validateRelease
+# Description:  Performs validation for the release command
+#
+# Parameters:
+#   branchName  The name of the branch to release
+# -----------------------------------------------------------------------------
+function validateRelease() {
+	if [ -z "$branchName" ]; then
+		printError $scriptName 'Missing BRANCH_NAME parameter'
+		echo
+		printUsage "$scriptName release ${gold}BRANCH_NAME"
+
+		exit 1
+	else
+		doesBranchExist=$($EXEC_GIT branch --no-color --list $branchName)
+
+		if [ -z "$doesBranchExist" ]; then
+			printError $scriptName "Cannot release branch '$branchName': No such Git branch"
+			echo
+			printUsage "$scriptName release ${gold}BRANCH_NAME"
+
+			exit 1
+		elif [[ "$branchName" != release/* ]]; then
+			printError $scriptName "Invalid release branch '$branchName': Must begin with 'release/'"
+			echo
+			printUsage "$scriptName release ${gold}BRANCH_NAME"
+
+			exit 1
+		fi
+	fi
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     validateRestore
+# Description:  Performs validation for the restore command
+#
+# Parameters:
+#   fileName    The file name to validate
+# -----------------------------------------------------------------------------
+function validateRestore() {
+	if [ -z "$fileName" ]; then
+		printError $scriptName 'Missing file parameter'
+		echo
+		printUsage "$scriptName restore ${gold}FILE"
+
+		exit 1
+	fi
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     validateStat
+# Description:  Performs validation for the stat command
+#
+# Parameters:
+#   commitNum   The commit history number to examine
+# -----------------------------------------------------------------------------
+function validateStat() {
+	if [ "$commitNum" ] && [[ ! "$commitNum" =~ ^[a-f0-9]+$ ]]; then
+		printError $scriptName "Invalid commit number format: '$commitNum'"
+		echo
+		printUsage "$scriptName stat ${gold}[COMMIT_NUM]"
+
+		exit 1
+	fi
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     validateUpdate
+# Description:  Performs validation for the update command
+#
+# Parameters:
+#   branchName  The name of the branch to update
+# -----------------------------------------------------------------------------
+function validateUpdate() {
+	isValidBranch=$($EXEC_GIT branch --no-color --list $branchName)
+
+	if [ -z "$isValidBranch" ]; then
+		printError $scriptName "Cannot access '$branchName': No such Git branch"
+		echo
+		printUsage "$scriptName update ${gold}BRANCH_NAME"
+
+		exit 1
+	fi
+}
+
+################################## Variables ##################################
+
+## Bash exec variables
+EXEC_GIT=/usr/bin/git
+EXEC_SSH=/usr/bin/ssh
+
+repoCommands=('amend' 'config' 'create-branch' 'delete-branch' 'diff' 'discard' 'history' 'list-branches' 'list-commits' 'list-config' 'list-tags' 'release' 'restore' 'stat' 'update')
+validCommands=(${repoCommands[@]} 'test-ssh')
+
+## Options
+command=${1:-}
+branchName=''
+
+## Variables
+isValidBranch=''
+showCommandHelp=false
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Display usage if no parameters given
+if [ -z "$command" ]; then
+	printUsage "$scriptName ${gold}[help]${yellow} COMMAND ${gold}[OPTION...]"
+	exit 1
+fi
+
+if [ "$command" == 'help' ]; then
+	showCommandHelp=true
+	command=${2:-}
+fi
+
+# Display error if invalid command
+if [ $command ] && [ $(containsElement "$command" "${validCommands[@]}") != '0' ]; then
+	printError $scriptName "Invalid command: '$command'"
+	echo
+	printUsage "$scriptName ${gold}[help]${yellow} COMMAND ${gold}[OPTION...]"
+
+	exit 1
+fi
+
+if [ "$showCommandHelp" == 'true' ]; then
+	showHelp
+	exit 0
+fi
+
+# Display error if not within a Git repository
+if [ $(containsElement "$command" "${repoCommands[@]}") == '0' ] && \
+	[ "$($EXEC_GIT rev-parse --is-inside-work-tree 2>/dev/null)" != 'true' ]; then
+		printError 'git-repo' "$PWD is not within a Git repository"
+		echo
+		printUsage "git-repo $command"
+
+		exit 1
+fi
+
+################################### Actions ###################################
+
+if [ $command == 'amend' ]; then
+	fileName=${2:-}
+	validateAmend
+
+	printBanner 'Amending additional changes to the very last commit'
+
+	if [ -z "$fileName" ]; then
+		$EXEC_GIT commit --amend --no-edit
+	else
+		$EXEC_GIT commit --amend --no-edit "$fileName"
+	fi
+
+	echo
+
+elif [ $command == 'config' ]; then
+	shift
+	validateConfig "$@"
+
+	printBanner 'Configuring Git Repository'
+
+	# Set fullname, if missing
+	if [ -z "$fullname" ]; then
+		fullname=$($EXEC_AWK -F ':' '/^'$USER'/{print $5}' /etc/passwd)
+		fullname=${fullname%%,*}
+
+		# Question 1
+		echo -n "What name do you want to use for this Git repository ($fullname)? "
+		read name
+		echo
+
+		if [ ! -z "$name" ]; then
+			fullname="$name"
+		fi
+	fi
+
+	# Question 2 --> Set useremail, if missing
+	while [ -z "$useremail" ]; do
+		echo -n 'What email address do you want to use for this Git repository? '
+		read useremail
+		echo
+	done
+
+	printInfo "Configuring Git repository user.name to $fullname"
+	$EXEC_GIT config user.name "$fullname"
+
+	printInfo "Configuring Git repository user.email to $useremail"
+	$EXEC_GIT config user.email "$useremail"
+
+elif [ $command == 'create-branch' ]; then
+	branchName=${2:-}
+	validateCreateBranch
+
+	printInfo "Creating branch '$branchName'"
+
+	$EXEC_GIT branch $branchName
+
+	printInfo 'Pushing new branch to origin'
+	echo
+	$EXEC_GIT push -u origin $branchName
+
+elif [ $command == 'delete-branch' ]; then
+	branchName=${2:-}
+	validateDeleteBranch
+
+	printBanner "Delete branch '$branchName'"
+
+	echo "${bold}${yellow}Are you sure you want to delete branch '${green}$branchName${yellow}'?${white}"
+	select confirmDelete in 'Yes' 'No'; do
+		if [ "$confirmDelete" == 'Yes' ]; then
+			echo
+			printInfo 'Deleting branch'
+			$EXEC_GIT branch -d $branchName
+		fi
+		break;
+	done
+
+elif [ "$command" == 'diff' ]; then
+	commitNum=${2:-}
+	fileName=${3:-}
+	validateDiff
+
+	printBanner "Displaying commit history diff '$commitNum' for file '$fileName'"
+
+	$EXEC_GIT diff $commitNum -- "$fileName"
+
+elif [ $command == 'discard' ]; then
+	fileName=${2:-}
+	validateDiscard
+
+	printBanner "Discard changes for file '$fileName'"
+
+	echo "${bold}${yellow}Are you sure you want to discard changes for '${green}$fileName${yellow}'?${white}"
+	select confirmDiscard in 'Yes' 'No'; do
+		if [ "$confirmDiscard" == 'Yes' ]; then
+			echo
+			printInfo 'Discarding changes'
+			$EXEC_GIT checkout HEAD "$fileName"
+		fi
+		break;
+	done
+
+elif [ $command == 'history' ]; then
+	fileName=${2:-}
+	validateHistory
+
+	if [ -z "$fileName" ]; then
+		$EXEC_GIT log
+	else
+		$EXEC_GIT log "$fileName"
+	fi
+
+	echo
+
+elif [ $command == 'list-branches' ]; then
+
+	$EXEC_GIT branch --list
+
+elif [ $command == 'list-commits' ]; then
+
+	$EXEC_GIT cherry -v
+
+elif [ $command == 'list-config' ]; then
+
+	$EXEC_GIT config --list
+
+elif [ $command == 'list-tags' ]; then
+
+	pattern="$2"
+
+	if [ -z "$pattern" ]; then
+		$EXEC_GIT tag --list
+	else
+		$EXEC_GIT tag --list "$pattern"
+	fi
+
+elif [ $command == 'release' ]; then
+	branchName=${2:-}
+	validateRelease
+
+	printBanner "Release branch '$branchName'"
+
+	echo "${bold}${yellow}Are you sure you want to release branch '${green}$branchName${yellow}'?${white}"
+	select confirmRelease in 'Yes' 'No'; do
+		if [ "$confirmRelease" == 'Yes' ]; then
+			echo
+			printInfo 'Checking out master branch'
+			$EXEC_GIT checkout master
+
+			printInfo 'Updating local master branch'
+			$EXEC_GIT pull origin master
+
+			printInfo "Merging release branch '$branchName' into master"
+			$EXEC_GIT merge $branchName
+
+			printInfo 'Creating new tag for the release point'
+			tagName=${branchName:8}
+			$EXEC_GIT tag -a $tagName -m "Create release tag $tagName"
+
+			printInfo 'Verifying tag was created'
+			$EXEC_GIT tag
+
+			printInfo 'Pushing master branch to remote repository'
+			$EXEC_GIT push origin master
+
+			printInfo 'Pushing release point tag to remote repository'
+			$EXEC_GIT push origin --tags
+		fi
+		break;
+	done
+
+elif [ "$command" == 'restore' ]; then
+	fileName=${2:-}
+	validateRestore
+
+	printBanner "Attempting to restore '$fileName'"
+
+	printInfo 'Restoring the file status in the index'
+	$EXEC_GIT reset -- "$fileName"
+
+	printInfo 'Checking out file copy from the index'
+	$EXEC_GIT checkout -- "$fileName"
+
+elif [ $command == 'stat' ]; then
+	commitNum=${2:-}
+	validateStat
+
+	if [ -z "$commitNum" ]; then
+		$EXEC_GIT stat
+	else
+		$EXEC_GIT stat "$commitNum" -1
+	fi
+
+elif [ $command == 'test-ssh' ]; then
+
+	$EXEC_SSH -T github.com
+
+elif [ $command == 'update' ]; then
+	branchName=${2:-'master'}
+	validateUpdate
+
+	printBanner "Update branch '$branchName'"
+
+	if [[ ! "$isValidBranch" =~ ^\* ]]; then
+		printInfo "Switching to '$branchName' branch"
+
+		$EXEC_GIT checkout $branchName
+	fi
+
+	printInfo 'Fetching remote updates'
+	$EXEC_GIT remote update
+	echo
+
+	printInfo 'Pull changes from remote into local'
+	git pull origin $branchName
+
+fi
+
+exit 0

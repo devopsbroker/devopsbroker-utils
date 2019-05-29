@@ -1,0 +1,92 @@
+#!/bin/bash
+
+#
+# public-ip - DevOpsBroker utility for displaying either the IPv4 or IPv6
+#	      Internet-facing public IP address
+#
+# Copyright (C) 2018 Edward Smith <edwardsmith@devopsbroker.org>
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# -----------------------------------------------------------------------------
+# Developed on Ubuntu 16.04.4 LTS running kernel.osrelease = 4.13.0-43
+#
+# Displays either the IPv4 or IPv6 Internet-facing public IP address.
+#
+# Options:
+#   -4: IPv4 Address (Default)
+#   -6: IPv6 Address
+# -----------------------------------------------------------------------------
+#
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Preprocessing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Load /etc/devops/ansi.conf if ANSI_CONFIG is unset
+if [ -z "$ANSI_CONFIG" ] && [ -f /etc/devops/ansi.conf ]; then
+	source /etc/devops/ansi.conf
+fi
+
+${ANSI_CONFIG?"[1;91mCannot load '/etc/devops/ansi.conf': No such file[0m"}
+
+# Load /etc/devops/exec.conf if EXEC_CONFIG is unset
+if [ -z "$EXEC_CONFIG" ] && [ -f /etc/devops/exec.conf ]; then
+	source /etc/devops/exec.conf
+fi
+
+${EXEC_CONFIG?"[1;91mCannot load '/etc/devops/exec.conf': No such file[0m"}
+
+# Load /etc/devops/functions.conf if FUNC_CONFIG is unset
+if [ -z "$FUNC_CONFIG" ] && [ -f /etc/devops/functions.conf ]; then
+	source /etc/devops/functions.conf
+fi
+
+${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m"}
+
+################################## Variables ##################################
+
+## Options
+ipv4=true
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Process parameter, if present
+if [ ! -z "$1" ]; then
+  if [ "$1" == '-6' ]; then
+    ipv4=false
+  elif [ "$1" != '-4' ]; then
+    # Display error and usage if option parameter is not valid
+    printError 'public-ip' "Invalid option: $1"
+    echo
+    printUsage "public-ip ${gold}[OPTION]"
+
+    echo ${bold}
+    echo "Valid Options:${romantic}"
+    echo '  -4	Use IPv4 only'
+    echo '  -6	Use IPv6 only'
+    echo ${reset}
+
+    exit 1
+  fi
+fi
+
+################################### Actions ###################################
+
+if [ "$ipv4" == 'true' ]; then
+  dig -4 +short myip.opendns.com @208.67.222.222	# Use OpenDNS
+else
+  ipv6Addr=$($EXEC_IP -6 addr | $EXEC_AWK '/scope global/{ print $2 }')
+  echo "${ipv6Addr::-3}"
+fi
+
+exit 0

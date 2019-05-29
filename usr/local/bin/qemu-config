@@ -1,0 +1,425 @@
+#!/bin/bash
+
+#
+# qemu-config - DevOpsBroker utility for configuring a KVM/QEMU virtual machine
+#
+# Copyright (C) 2018-2019 Edward Smith <edwardsmith@devopsbroker.org>
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# -----------------------------------------------------------------------------
+# Developed on Ubuntu 16.04.4 LTS running kernel.osrelease = 4.13.0-45
+#
+# -----------------------------------------------------------------------------
+#
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Preprocessing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Load /etc/devops/ansi.conf if ANSI_CONFIG is unset
+if [ -z "$ANSI_CONFIG" ] && [ -f /etc/devops/ansi.conf ]; then
+	source /etc/devops/ansi.conf
+fi
+
+${ANSI_CONFIG?"[1;91mCannot load '/etc/devops/ansi.conf': No such file[0m"}
+
+# Load /etc/devops/exec.conf if EXEC_CONFIG is unset
+if [ -z "$EXEC_CONFIG" ] && [ -f /etc/devops/exec.conf ]; then
+	source /etc/devops/exec.conf
+fi
+
+${EXEC_CONFIG?"[1;91mCannot load '/etc/devops/exec.conf': No such file[0m"}
+
+# Load /etc/devops/functions.conf if FUNC_CONFIG is unset
+if [ -z "$FUNC_CONFIG" ] && [ -f /etc/devops/functions.conf ]; then
+	source /etc/devops/functions.conf
+fi
+
+${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m"}
+
+# Load /etc/devops/functions-io.conf if FUNC_IO_CONFIG is unset
+if [ -z "$FUNC_IO_CONFIG" ] && [ -f /etc/devops/functions-io.conf ]; then
+	source /etc/devops/functions-io.conf
+fi
+
+${FUNC_IO_CONFIG?"[1;91mCannot load '/etc/devops/functions-io.conf': No such file[0m"}
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Robustness ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+set -o errexit                 # Exit if any statement returns a non-true value
+set -o nounset                 # Exit if use an uninitialised variable
+set -o pipefail                # Exit if any statement in a pipeline returns a non-true value
+IFS=$'\n\t'                    # Default the Internal Field Separator to newline and tab
+
+scriptName='qemu-config'
+
+################################## Functions ##################################
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     showHelp
+# Description:  Displays help message to the user
+# -----------------------------------------------------------------------------
+function showHelp() {
+	# BEGIN showHelp function
+
+	if [ -z "$command" ]; then
+		printUsage "$scriptName COMMAND ${gold}[OPTION...]"
+		echo
+		printUsage 'false' "$scriptName image ${gold}[-d directory] ${yellow}IMG_FILE SIZE"
+		printUsage 'false' "$scriptName info ${gold}[OPTION...]"
+		printUsage 'false' "$scriptName init ${gold}[-d directory]"
+		echo
+	elif [ "$command" == 'image' ]; then
+		printUsage "$scriptName image ${gold}[-d directory] ${yellow}IMG_FILE SIZE"
+		echo ${romantic}
+		echo 'Creates a new QEMU image file IMG_FILE of SIZE'${reset}
+	elif [ "$command" == 'info' ]; then
+		printUsage "$scriptName info ${gold}[OPTION...]"
+		echo ${romantic}
+		echo 'Easily review help information for various QEMU components'${reset}
+	elif [ "$command" == 'init' ]; then
+		printUsage "$scriptName init ${gold}[-d directory]"
+		echo ${romantic}
+		echo 'Copies OVMF UEFI BIOS, keymap, and generates a random MAC Address and UUID'${reset}
+	fi
+
+	# END showHelp function
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     validateImage
+# Description:  Performs validation for the image command
+# -----------------------------------------------------------------------------
+function validateImage() {
+	local option="${1:-}"
+
+	if [ -z "$option" ]; then
+		printUsage "$scriptName image ${gold}[-d directory] ${yellow}IMG_FILE SIZE"
+	fi
+
+	# Process command-line options, if present
+	while [[ "$option" =~ ^- ]]; do
+
+		if [ "$option" == '-d' ]; then
+
+			errorMessage=$(isValidDirectory $scriptName "${2:-}")
+
+			# Display error if directory parameter is missing or invalid
+			if [ "$errorMessage" != '0' ]; then
+				echo "$errorMessage"
+				echo
+				printUsage "$scriptName image ${gold}[-d directory] ${yellow}IMG_FILE SIZE"
+
+				exit 1
+			fi
+
+			# Use virtual machine image directory provided by user
+			QEMU_DIR="$2"
+			shift 2
+			option="${1:-}"
+
+		else
+			# Display usage and error if option parameter is not valid
+			printError $scriptName "Invalid option: $option"
+			echo
+			printUsage "$scriptName image ${gold}[-d directory] ${yellow}IMG_FILE SIZE"
+
+			exit 1
+		fi
+	done
+
+	IMG_FILE="${1:-}"
+	IMG_SIZE="${2:-}"
+
+	# Display error if no file parameter given
+	if [ -z "$IMG_FILE" ]; then
+		printError $scriptName 'Missing file parameter'
+		echo
+		printUsage "$scriptName image ${gold}[-d directory] ${yellow}IMG_FILE SIZE"
+
+		exit 1
+	fi
+
+	# Append .img to filename, if not already present
+	if [[ "$IMG_FILE" != *.img ]]; then
+		IMG_FILE=$IMG_FILE'.img'
+	fi
+
+	# Display error if image file already exists
+	if [ -f "$QEMU_DIR/$IMG_FILE" ]; then
+		printError $scriptName "Invalid image file '$IMG_FILE': File already exists"
+		echo
+		printUsage "$scriptName image ${gold}[-d directory] ${yellow}IMG_FILE SIZE"
+
+		exit 1
+	fi
+
+	# Display error if no image size parameter given
+	if [ -z "$IMG_SIZE" ]; then
+		printError $scriptName 'Missing QEMU image file size parameter'
+		echo
+		printUsage "$scriptName image ${gold}[-d directory] ${yellow}$IMG_FILE SIZE"
+
+		exit 1
+	fi
+
+	# Display error if image size suffix is invalid
+	if [[ ! "$IMG_SIZE" =~ (k|K|M|G|T)$ ]]; then
+		printError $scriptName "Invalid QEMU image size suffix: $IMG_SIZE"
+		echo
+		printUsage "$scriptName image ${gold}[-d directory] ${yellow}$IMG_FILE SIZE"
+		echo ${bold}
+		echo "Valid Size Suffixes:${romantic}"
+		echo -e '  k or K\t'	'kilobyte, 1024'
+		echo -e '  M\t\t'		'megabyte, 1024k'
+		echo -e '  G\t\t'		'gigabyte, 1024M'
+		echo -e '  T\t\t'		'terabyte, 1024G'
+		echo ${reset}
+
+		exit 1
+	fi
+
+	# Display error if image size is invalid
+	if [[ ! "$IMG_SIZE" =~ ^[0-9]+(k|K|M|G|T)$ ]]; then
+		printError $scriptName "Invalid image size: $IMG_SIZE"
+		echo
+		printUsage "$scriptName image ${gold}[-d directory] ${yellow}$IMG_FILE SIZE"
+
+		exit 1
+	fi
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     validateInit
+# Description:  Performs validation for the init command
+# -----------------------------------------------------------------------------
+function validateInit() {
+	local option="${1:-}"
+
+	if [ "$option" ] && [[ ! "$option" =~ ^- ]]; then
+		printUsage "$scriptName init ${gold}[-d directory]"
+	fi
+
+	# Process command-line options, if present
+	while [[ "$option" =~ ^- ]]; do
+
+		if [ "$option" == '-d' ]; then
+
+			errorMessage=$(isValidDirectory $scriptName "${2:-}")
+
+			# Display error if directory parameter is missing or invalid
+			if [ "$errorMessage" != '0' ]; then
+				echo "$errorMessage"
+				echo
+				printUsage "$scriptName init ${gold}[-d directory]"
+
+				exit 1
+			fi
+
+			# Use virtual machine image directory provided by user
+			QEMU_DIR="$2"
+			shift 2
+			option="${1:-}"
+
+		else
+			# Display usage and error if option parameter is not valid
+			printError $scriptName "Invalid option: $option"
+			echo
+			printUsage "$scriptName init ${gold}[-d directory]"
+
+			exit 1
+		fi
+	done
+}
+
+################################## Variables ##################################
+
+## Bash exec variables
+EXEC_QEMU=/usr/bin/qemu-system-x86_64
+EXEC_QEMU_IMG=/usr/bin/qemu-img
+EXEC_MACADDR=/usr/local/bin/macaddr
+EXEC_UUID=/usr/local/bin/uuid
+
+# Options
+command=${1:-}
+QEMU_DIR='.'
+
+## Variables
+showCommandHelp=false
+validCommands=('image' 'info' 'init')
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+if [ "$command" == 'help' ]; then
+	showCommandHelp=true
+	command=${2:-}
+fi
+
+# Display error if invalid command
+if [ "$command" ] && [ $(containsElement "$command" "${validCommands[@]}") != '0' ]; then
+	printError $scriptName "Invalid command: '$command'"
+	echo
+	printUsage "$scriptName ${gold}[help]${yellow} COMMAND ${gold}[OPTION...]"
+
+	exit 1
+fi
+
+if [ "$showCommandHelp" == 'true' ]; then
+	showHelp
+	exit 0
+fi
+
+################################### Actions ###################################
+
+if [ $command == 'image' ]; then
+	shift
+	validateImage "$@"
+
+	printInfo "Creating QEMU image $QEMU_DIR/$IMG_FILE"
+
+	$EXEC_QEMU_IMG create -f raw "$QEMU_DIR/$IMG_FILE" ${IMG_SIZE}
+
+	$EXEC_CHOWN --changes $USER:kvm "$QEMU_DIR"
+	$EXEC_CHMOD --changes 750 "$QEMU_DIR"
+
+	$EXEC_CHOWN --changes $USER:kvm "$QEMU_DIR/$IMG_FILE"
+	$EXEC_CHMOD --changes 660 "$QEMU_DIR/$IMG_FILE"
+
+elif [ $command == 'init' ]; then
+	validateInit
+
+	printBanner "Initializing QEMU Virtual Machine"
+
+	if [ ! -f "$QEMU_DIR/bios.bin" ]; then
+		printInfo "Copying OVMF UEFI BIOS to $QEMU_DIR"
+		$EXEC_CP /usr/share/qemu/OVMF.fd "$QEMU_DIR/bios.bin"
+
+		$EXEC_CHOWN --changes $USER:kvm "$QEMU_DIR/bios.bin"
+		$EXEC_CHMOD --changes 660 "$QEMU_DIR/bios.bin"
+	fi
+
+	if [ ! -f "$QEMU_DIR/en-us" ]; then
+		printInfo "Copying en-us keymap to $QEMU_DIR"
+		$EXEC_CP /usr/share/qemu/keymaps/en-us "$QEMU_DIR/en-us"
+
+		$EXEC_CHOWN --changes $USER:kvm "$QEMU_DIR/en-us"
+		$EXEC_CHMOD --changes 640 "$QEMU_DIR/en-us"
+	fi
+
+	if [ ! -d "$QEMU_DIR/shared" ]; then
+		printInfo "Creating $QEMU_DIR/shared directory"
+
+		$EXEC_MKDIR --parents --mode=0750 "$QEMU_DIR/shared"
+		$EXEC_CHOWN --changes $USER:kvm "$QEMU_DIR/shared"
+	fi
+
+	# qemu MAC address must begin with 52:54
+	echo
+	echo -e "MAC Address:\t $( $EXEC_MACADDR '52:54' )"
+	echo -e "UUID:\t\t $( $EXEC_UUID )"
+	echo
+
+elif [ $command == 'info' ]; then
+
+	if [ -z "${2:-}" ]; then
+
+		mapfile -t helpOutput < <( $EXEC_QEMU --h )
+
+	elif [ "${2:-}" == 'audio' ]; then
+
+		mapfile -t helpOutput < <( $EXEC_QEMU --audio-help )
+
+	elif [ "${2:-}" == 'chardev' ]; then
+
+		mapfile chardevList < <($EXEC_QEMU --chardev help 2>&1)
+		unset chardevList[0]
+		unset IFS; sortedList=( $($EXEC_SORT <<<"${chardevList[@]}") ); IFS=$'\n\t'
+
+		echo ${bold}${white}'Available chardev backend types:'${reset}
+		printf "\n%s" "${sortedList[@]}"
+		printf "\n\n"
+		exit 0
+
+	elif [ "${2:-}" == 'cpu' ]; then
+
+		mapfile -t helpOutput < <( $EXEC_QEMU --cpu help )
+
+	elif [ "${2:-}" == 'device' ]; then
+
+		if [ -z "${3:-}" ]; then
+			mapfile -t helpOutput < <( $EXEC_QEMU --device help )
+		else
+			mapfile -t helpOutput < <( $EXEC_QEMU --device $3,help 2>&1 | $EXEC_SORT )
+		fi
+
+	elif [ "${2:-}" == 'machine' ]; then
+
+		if [ -z "${3:-}" ]; then
+			mapfile -t helpOutput < <( $EXEC_QEMU --machine help )
+		else
+			mapfile -t helpOutput < <( $EXEC_QEMU --machine $3,help 2>&1 | $EXEC_SORT )
+		fi
+
+	elif [ "${2:-}" == 'nic' ]; then
+
+		mapfile nicModelList < <($EXEC_QEMU --net nic,model=help 2>&1 | $EXEC_GREP -Eo '[a-z0-9_]+(,[a-z0-9_]+)+$' | $EXEC_TR "','" "'\n'")
+		sortedList=( $($EXEC_SORT <<<"${nicModelList[@]}") )
+
+		echo ${bold}${white}'Supported NIC models:'${reset}
+		printf "\n%s" "${sortedList[@]}"
+		printf "\n\n"
+		exit 0
+
+	elif [ "${2:-}" == 'path' ]; then
+
+		mapfile -t helpOutput < <( $EXEC_QEMU --L help 2>&1 | $EXEC_SORT )
+
+	elif [ "${2:-}" == 'soundhw' ]; then
+
+		mapfile -t helpOutput < <( $EXEC_QEMU --soundhw help )
+
+	elif [ "${2:-}" == 'tpmdev' ]; then
+
+		mapfile -t helpOutput < <( $EXEC_QEMU --tpmdev help )
+
+	elif [ "${2:-}" == 'watchdog' ]; then
+
+		mapfile -t helpOutput < <( $EXEC_QEMU --watchdog help )
+
+	else
+		printError $scriptName "Invalid help topic: ${2:-}"
+		echo
+		echo ${bold}${white}'Valid Options:'${reset}
+		echo -e ${bold}${yellow}'  [none]\t\t'           ${romantic}'Display high-level QEMU help'
+		echo -e ${bold}${yellow}'  audio\t\t\t'          ${romantic}'List the audio subsystem drivers and tunable parameters'
+		echo -e ${bold}${yellow}'  chardev\t\t'          ${romantic}'View available character device backends'
+		echo -e ${bold}${yellow}'  cpu\t\t\t'            ${romantic}'List CPU models and view additional feature selections'
+		echo -e ${bold}${yellow}'  device [driver]\t'    ${romantic}'Get help on available device drivers and properties'
+		echo -e ${bold}${yellow}'  machine\t\t'          ${romantic}'View available QEMU machines'
+		echo -e ${bold}${yellow}'  nic\t\t\t'            ${romantic}'List of available networking devices'
+		echo -e ${bold}${yellow}'  path\t\t\t'           ${romantic}'List all the configured data directories'
+		echo -e ${bold}${yellow}'  soundhw\t\t'          ${romantic}'List all available sound hardware'
+		echo -e ${bold}${yellow}'  tpmdev\t\t'           ${romantic}'View all available TPM backend types'
+		echo -e ${bold}${yellow}'  watchdog\t\t'         ${romantic}'List available hardware watchdog models'
+		echo ${reset}
+
+		exit 1
+	fi
+
+	for line in "${helpOutput[@]}"; do
+		echo $line
+	done
+
+fi
+
+exit 0

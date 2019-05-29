@@ -1,0 +1,285 @@
+#!/bin/bash
+
+#
+# movedir - DevOpsBroker utility for moving one of /cache /home /opt /snap
+#
+# Copyright (C) 2018-2019 Edward Smith <edwardsmith@devopsbroker.org>
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# -----------------------------------------------------------------------------
+# Developed on Ubuntu 16.04.5 LTS running kernel.osrelease = 4.15.0-34
+#
+# Utility to move the location of /cache /home /opt /snap to another directory.
+# You will need to boot into recovery mode and enter the root shell in order to
+# properly move these directories.
+#
+# Especially useful in moving these directories to another partition.
+#
+# For example, having a partition mounted at /mnt/ssd:
+#   o movedir /cache /mnt/ssd
+#   o movedir /opt /mnt/ssd
+#   o movedir /snap /mnt/ssd
+#
+# And if you have a partition mounted at /mnt/hdd:
+#   o movedir /home /mnt/hdd
+# -----------------------------------------------------------------------------
+#
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Preprocessing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Load /etc/devops/ansi.conf if ANSI_CONFIG is unset
+if [ -z "$ANSI_CONFIG" ] && [ -f /etc/devops/ansi.conf ]; then
+	source /etc/devops/ansi.conf
+fi
+
+${ANSI_CONFIG?"[1;91mCannot load '/etc/devops/ansi.conf': No such file[0m"}
+
+# Load /etc/devops/exec.conf if EXEC_CONFIG is unset
+if [ -z "$EXEC_CONFIG" ] && [ -f /etc/devops/exec.conf ]; then
+	source /etc/devops/exec.conf
+fi
+
+${EXEC_CONFIG?"[1;91mCannot load '/etc/devops/exec.conf': No such file[0m"}
+
+# Load /etc/devops/functions.conf if FUNC_CONFIG is unset
+if [ -z "$FUNC_CONFIG" ] && [ -f /etc/devops/functions.conf ]; then
+	source /etc/devops/functions.conf
+fi
+
+${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m"}
+
+# Display error if not running as root
+if [ "$USER" != 'root' ]; then
+	printError 'movedir' 'Permission denied (you must be root)'
+	exit 1
+fi
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Robustness ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+set -o errexit                 # Exit if any statement returns a non-true value
+set -o nounset                 # Exit if use an uninitialised variable
+set -o pipefail                # Exit if any statement in a pipeline returns a non-true value
+IFS=$'\n\t'                    # Default the Internal Field Separator to newline and tab
+
+scriptName='movedir'
+
+# Display error if not running as root
+if [ "$USER" != 'root' ]; then
+	printError $scriptName 'Permission denied (you must be root)'
+	exit 1
+fi
+
+################################## Functions ##################################
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     isDirectory
+# Description:  Verifies whether the directory parameter is not empty and is a valid directory
+#
+# Parameter $1: The command-line directory parameter
+# Returns:      Zero if directory is valid, one if invalid
+# -----------------------------------------------------------------------------
+function isDirectory() {
+	local dirName="$@"
+
+	# Display error if no directory parameter given
+	if [ -z "$dirName" ]; then
+		printError "$scriptName" 'Missing directory parameter'
+		return 0
+	fi
+
+	# Display error if invalid directory parameter given
+	if [ ! -d "$dirName" ]; then
+		printError "$scriptName" "Cannot access '$dirName': No such directory"
+		return 0
+	fi
+
+	echo '0'
+}
+
+################################## Variables ##################################
+
+## Options
+SOURCE_DIR=${1:-}
+DEST_DIR=${2:-}
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Display usage if no parameters given
+if [ -z "$SOURCE_DIR" ]; then
+	printUsage "$scriptName { /cache | /home | /opt | /snap } DEST_DIR"
+	exit 1
+fi
+
+# Display error if invalid source directory paramter
+if [[ ! "$SOURCE_DIR" =~ ^/(cache|home|opt|snap)$ ]]; then
+	printError $scriptName "Invalid source directory: '$SOURCE_DIR'"
+	echo
+	printUsage "$scriptName { /cache | /home | /opt | /snap } DEST_DIR"
+
+	exit 1
+fi
+
+errorMessage=$(isDirectory "$DEST_DIR")
+
+# Display error if destination directory parameter is missing or invalid
+if [ "$errorMessage" != '0' ]; then
+	echo "$errorMessage"
+	echo
+	printUsage "$scriptName $SOURCE_DIR DEST_DIR"
+
+	exit 1
+fi
+
+# Load all bind mounts from /etc/fstab
+mapfile -t bindMountList < <($EXEC_GREP -E '\bbind\b' /etc/fstab)
+
+# Display message if source dirctory has already been moved
+for bindMount in "${bindMountList[@]}"; do
+	if [[ "$bindMount" =~ [[:blank:]]$SOURCE_DIR[[:blank:]] ]]; then
+		printInfo "Source directory '$SOURCE_DIR' has already been moved"
+		printInfo 'Exiting'
+		exit 0
+	fi
+done
+
+################################### Actions ###################################
+
+# Backup existing /etc/fstab
+printInfo 'Backing up /etc/fstab'
+$EXEC_CP /etc/fstab /etc/fstab.bak
+
+# Add bind mounts comment to /etc/fstab if necessary
+if [ "${#bindMountList[@]}" -eq 0 ]; then
+	# The -e flag tells echo to interpret the newline character
+	echo -e '\n# Bind mounts' >> /etc/fstab
+fi
+
+if [ "$SOURCE_DIR" == '/cache' ]; then
+
+	# Create $DEST_DIR/cache directory if necessary
+	if [ ! -d "$DEST_DIR/cache" ]; then
+		printInfo "Creating $DEST_DIR/cache directory"
+
+		$EXEC_MKDIR --parents --mode=0770 "$DEST_DIR/cache"
+		$EXEC_CHOWN --changes root:users "$DEST_DIR/cache"
+	fi
+
+	if [ ! -z "$($EXEC_LS -A /cache)" ]; then
+		if [ ! -z "$($EXEC_LS -A $DEST_DIR/cache)" ]; then
+			printInfo "Cleaning $DEST_DIR/cache directory"
+			$EXEC_RM -rf "$DEST_DIR/cache/*"
+		fi
+
+		printInfo "Moving /cache directory to $DEST_DIR"
+		$EXEC_CP -a /cache $DEST_DIR
+		$EXEC_RM -rf /cache/*
+	fi
+
+	printInfo "Adding $DEST_DIR/cache bind mount to /etc/fstab"
+	echo "$DEST_DIR/cache	/cache	none	bind	0	0" >> /etc/fstab
+
+	printInfo "Bind mounting $DEST_DIR/cache directory to /cache"
+	$EXEC_MOUNT --bind $DEST_DIR/cache /cache
+
+elif [ "$SOURCE_DIR" == '/home' ]; then
+
+	# Create $DEST_DIR/home directory if necessary
+	if [ ! -d "$DEST_DIR/home" ]; then
+		printInfo "Creating $DEST_DIR/home directory"
+
+		$EXEC_MKDIR --parents --mode=0755 "$DEST_DIR/home"
+	fi
+
+	if [ ! -z "$($EXEC_LS -A /home)" ]; then
+		if [ ! -z "$($EXEC_LS -A $DEST_DIR/home)" ]; then
+
+			echo "${bold}${yellow}Destination directory '${green}$DEST_DIR/home${yellow}' is not empty"
+			echo "Are you sure you want to delete all of its contents?${white}"
+			select confirmDelete in 'Yes' 'No'; do
+				if [ "$confirmDelete" == 'Yes' ]; then
+					echo
+					printInfo "Cleaning $DEST_DIR/home directory"
+					$EXEC_RM -rf "$DEST_DIR/home/*"
+				fi
+				break;
+			done
+		fi
+
+		printInfo "Moving /home directory to $DEST_DIR"
+		$EXEC_CP -a /home $DEST_DIR
+		$EXEC_RM -rf /home/*
+	fi
+
+	printInfo "Adding $DEST_DIR/home bind mount to /etc/fstab"
+	echo "$DEST_DIR/home	/home	none	bind	0	0" >> /etc/fstab
+
+	printInfo "Bind mounting $DEST_DIR/home directory to /home"
+	$EXEC_MOUNT --bind $DEST_DIR/home /home
+
+elif [ "$SOURCE_DIR" == '/opt' ]; then
+
+	# Create $DEST_DIR/opt directory if necessary
+	if [ ! -d "$DEST_DIR/opt" ]; then
+		printInfo "Creating $DEST_DIR/opt directory"
+
+		$EXEC_MKDIR --parents --mode=0755 "$DEST_DIR/opt"
+	fi
+
+	if [ ! -z "$($EXEC_LS -A /opt)" ]; then
+		if [ ! -z "$($EXEC_LS -A $DEST_DIR/opt)" ]; then
+			printInfo "Cleaning $DEST_DIR/opt directory"
+			$EXEC_RM -rf "$DEST_DIR/opt/*"
+		fi
+
+		printInfo "Moving /opt directory to $DEST_DIR"
+		$EXEC_CP -a /opt $DEST_DIR
+		$EXEC_RM -rf /opt/*
+	fi
+
+	printInfo "Adding $DEST_DIR/opt bind mount to /etc/fstab"
+	echo "$DEST_DIR/opt	/opt	none	bind	0	0" >> /etc/fstab
+
+	printInfo "Bind mounting $DEST_DIR/opt directory to /opt"
+	$EXEC_MOUNT --bind $DEST_DIR/opt /opt
+
+elif [ "$SOURCE_DIR" == '/snap' ]; then
+
+	# Create $DEST_DIR/snap directory if necessary
+	if [ ! -d "$DEST_DIR/snap" ]; then
+		printInfo "Creating $DEST_DIR/snap directory"
+
+		$EXEC_MKDIR --parents --mode=0755 "$DEST_DIR/snap"
+	fi
+
+	if [ ! -z "$($EXEC_LS -A /snap)" ]; then
+		if [ ! -z "$($EXEC_LS -A $DEST_DIR/snap)" ]; then
+			printInfo "Cleaning $DEST_DIR/snap directory"
+			$EXEC_RM -rf "$DEST_DIR/snap/*"
+		fi
+
+		printInfo "Moving /snap directory to $DEST_DIR"
+		$EXEC_CP -a /snap $DEST_DIR
+		$EXEC_RM -rf /snap/*
+	fi
+
+	printInfo "Adding $DEST_DIR/snap bind mount to /etc/fstab"
+	echo "$DEST_DIR/snap	/snap	none	bind	0	0" >> /etc/fstab
+
+	printInfo "Bind mounting $DEST_DIR/snap directory to /snap"
+	$EXEC_MOUNT --bind $DEST_DIR/snap /snap
+
+fi
+
+exit 0

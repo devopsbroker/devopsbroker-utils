@@ -1,0 +1,288 @@
+#!/bin/bash
+
+#
+# verify - DevOpsBroker utility for creating and verifying file hashes and signatures
+#
+# Copyright (C) 2018-2019 Edward Smith <edwardsmith@devopsbroker.org>
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# -----------------------------------------------------------------------------
+# Developed on Ubuntu 16.04.4 LTS running kernel.osrelease = 4.13.0-45
+#
+# To create a PGP signature of a file:
+#   o sig sign FILENAME
+#
+# To verify the PGP signature of a file:
+#   o sig verify PGP_SIG FILENAME
+#
+# NOTE: ASCII-format detached signatures generate a .asc extension while binary
+#	detached signatures generate a .sig extension
+# -----------------------------------------------------------------------------
+#
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Preprocessing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Load /etc/devops/ansi.conf if ANSI_CONFIG is unset
+if [ -z "$ANSI_CONFIG" ] && [ -f /etc/devops/ansi.conf ]; then
+	source /etc/devops/ansi.conf
+fi
+
+${ANSI_CONFIG?"[1;91mCannot load '/etc/devops/ansi.conf': No such file[0m"}
+
+# Load /etc/devops/exec.conf if EXEC_CONFIG is unset
+if [ -z "$EXEC_CONFIG" ] && [ -f /etc/devops/exec.conf ]; then
+	source /etc/devops/exec.conf
+fi
+
+${EXEC_CONFIG?"[1;91mCannot load '/etc/devops/exec.conf': No such file[0m"}
+
+# Load /etc/devops/functions.conf if FUNC_CONFIG is unset
+if [ -z "$FUNC_CONFIG" ] && [ -f /etc/devops/functions.conf ]; then
+	source /etc/devops/functions.conf
+fi
+
+${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m"}
+
+# Load /etc/devops/functions-io.conf if FUNC_IO_CONFIG is unset
+if [ -z "$FUNC_IO_CONFIG" ] && [ -f /etc/devops/functions-io.conf ]; then
+	source /etc/devops/functions-io.conf
+fi
+
+${FUNC_IO_CONFIG?"[1;91mCannot load '/etc/devops/functions-io.conf': No such file[0m"}
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Robustness ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+set -o errexit                 # Exit if any statement returns a non-true value
+set -o nounset                 # Exit if use an uninitialised variable
+set -o pipefail                # Exit if any statement in a pipeline returns a non-true value
+IFS=$'\n\t'                    # Default the Internal Field Separator to newline and tab
+
+scriptName='verify'
+
+################################## Functions ##################################
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     showMissingFilename
+# Description:  Displays usage information when the filename is missing
+# -----------------------------------------------------------------------------
+function showMissingFilename() {
+
+	if [ "$command" == 'sign' ]; then
+		printUsage "verify sign ${gold}[OPTION] ${yellow}FILE"
+		echo ${bold}
+		echo "Valid Options:${romantic}"
+		echo -e ${gold}'  -a\t'  ${romantic}'Create an ASCII-format detached signature file'
+		echo ${reset}
+	elif [ "$command" == 'pgp' ]; then
+		printUsage 'verify pgp FILE SIG_FILE'
+	fi
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     validateCompute
+# Description:  Performs validation for the compute command
+#
+# Parameters:
+#   fileName    The file name to verify
+# -----------------------------------------------------------------------------
+function validateCompute() {
+	errorMessage=$(isValidFile $scriptName "$fileName")
+
+	# Display error if fileName parameter is missing or invalid
+	if [ "$errorMessage" != '0' ]; then
+		echo "$errorMessage"
+		echo
+		printUsage "$scriptName $command FILE"
+
+		exit 1
+	fi
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     validatePGP
+# Description:  Performs validation for the pgp command
+#
+# Parameters:
+#   fileName    The file name to verify
+#   sigFile     The PGP signature file to verify
+# -----------------------------------------------------------------------------
+function validatePGP() {
+	errorMessage=$(isValidFile $scriptName "$fileName")
+
+	# Display error if fileName parameter is missing or invalid
+	if [ "$errorMessage" != '0' ]; then
+		echo "$errorMessage"
+		echo
+		printUsage "$scriptName $command FILE SIG_FILE"
+		printUsage
+
+		exit 1
+	fi
+
+	errorMessage=$(isValidFile 'verify' "$sigFile")
+
+	# Display error if signature file parameter is missing or invalid
+	if [ "$errorMessage" != '0' ]; then
+		echo "$errorMessage"
+		echo
+		printUsage "$scriptName $command $fileName SIG_FILE"
+		printUsage
+
+		exit 1
+	fi
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     validateSHA256
+# Description:  Performs validation for the sha256 command
+#
+# Parameters:
+#   sha256Hash  The SHA256 hash to verify against
+#   fileName    The file name to verify (optional)
+# -----------------------------------------------------------------------------
+function validateSHA256() {
+
+	# Display error if sha256Hash parameter is missing
+	if [ -z "$sha256Hash" ]; then
+		printError $scriptName 'Missing SHA256HASH parameter'
+		echo
+		printUsage "$scriptName $command { FILE | SHA256HASH }"
+
+		exit 1
+	fi
+
+	if [ -f "$sha256Hash" ]; then
+		# Verify SHA256HASH file exists if passed as parameter
+		errorMessage=$(isValidFile $scriptName "$sha256Hash")
+
+		# Display error if sha256Hash parameter is invalid
+		if [ "$errorMessage" != '0' ]; then
+			echo "$errorMessage"
+			echo
+			printUsage "$scriptName $command { FILE | SHA256HASH }"
+
+			exit 1
+		fi
+	else
+		errorMessage=$(isValidFile $scriptName "$fileName")
+
+		# Display error if fileName parameter is missing or invalid
+		if [ "$errorMessage" != '0' ]; then
+			echo "$errorMessage"
+			echo
+			printUsage "$scriptName $command SHA256HASH FILE"
+
+			exit 1
+		fi
+	fi
+}
+
+################################## Variables ##################################
+
+## Bash exec variables
+EXEC_SHA256SUM=/usr/bin/sha256sum
+
+## Options
+command=${1:-}
+
+## Variables
+export TMPDIR=${TMPDIR:-'/tmp'}
+
+validCommands=('compute' 'pgp' 'sha256' 'sign')
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Display usage if no parameters given
+if [ -z "$command" ]; then
+	printUsage "$scriptName { compute | pgp | sha256 | sign }"
+	exit 1
+fi
+
+# Display error if invalid command
+if [ $(containsElement "$command" "${validCommands[@]}") != '0' ]; then
+	printError $scriptName "Invalid command: $command"
+	echo
+	printUsage "$scriptName { compute | pgp | sha256 | sign }"
+
+	exit 1
+fi
+
+if [ "$command" == 'sign' ]; then
+
+	if [ "${2:-}" == '-a' ]; then
+		asciiFormat='true'
+
+		# File is the third parameter
+		fileName="${3:-}"
+	else
+		asciiFormat='false'
+
+		# File is the second parameter
+		fileName="${2:-}"
+	fi
+
+	errorMessage=$(isValidFile 'verify' "$fileName")
+
+	# Display error if file parameter is missing or invalid
+	if [ "$errorMessage" != '0' ]; then
+		echo "$errorMessage"
+		echo
+		showMissingFilename
+
+		exit 1
+	fi
+fi
+
+################################### Actions ###################################
+
+if [ "$command" == 'compute' ]; then
+	fileName="${2:-}"
+	validateCompute
+
+	$EXEC_SHA256SUM "$fileName"
+
+elif [ "$command" == 'pgp' ]; then
+	fileName="${2:-}"
+	sigFile="${3:-}"
+	validatePGP
+
+	$EXEC_GPG --verify "$sigFile" "$fileName"
+
+elif [ "$command" == 'sha256' ]; then
+	sha256Hash="${2:-}"
+	fileName="${3:-}"
+	validateSHA256
+
+	if [ -f "$sha256Hash" ]; then
+
+		$EXEC_SHA256SUM --check "$sha256Hash"
+
+	else
+		echo "$sha256Hash"  "$($EXEC_READLINK -f $fileName)" > "$TMPDIR/verify-sha256sum.txt"
+		$EXEC_SHA256SUM --check "$TMPDIR/verify-sha256sum.txt"
+		$EXEC_RM "$TMPDIR/verify-sha256sum.txt"
+	fi
+
+elif [ "$command" == 'sign' ]; then
+
+	if [ "$asciiFormat" == 'false' ]; then
+		$EXEC_GPG --detach-sig "$fileName"
+	else
+		$EXEC_GPG --detach-sig -a "$fileName"
+	fi
+
+fi
+
+exit 0

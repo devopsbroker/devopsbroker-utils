@@ -1,0 +1,121 @@
+#!/bin/bash
+
+#
+# macaddr - DevOpsBroker utility for generating a MAC-48 address
+#
+# Copyright (C) 2018 Edward Smith <edwardsmith@devopsbroker.org>
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# -----------------------------------------------------------------------------
+# Developed on Ubuntu 16.04.4 LTS running kernel.osrelease = 4.13.0-45
+#
+# Generates a random 48-bit MAC address.
+#
+# OUI: An organizationally unique identifier (OUI) is a 24-bit number that
+#      uniquely identifies a vendor, manufacturer, or other organization.
+#
+# macaddr will take either a 16-bit or 24-bit OUI, if specified. Otherwise, it
+# will generate a random unicast, locally administered MAC address.
+# -----------------------------------------------------------------------------
+#
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Preprocessing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Load /etc/devops/ansi.conf if ANSI_CONFIG is unset
+if [ -z "$ANSI_CONFIG" ] && [ -f /etc/devops/ansi.conf ]; then
+	source /etc/devops/ansi.conf
+fi
+
+${ANSI_CONFIG?"[1;91mCannot load '/etc/devops/ansi.conf': No such file[0m"}
+
+# Load /etc/devops/exec.conf if EXEC_CONFIG is unset
+if [ -z "$EXEC_CONFIG" ] && [ -f /etc/devops/exec.conf ]; then
+	source /etc/devops/exec.conf
+fi
+
+${EXEC_CONFIG?"[1;91mCannot load '/etc/devops/exec.conf': No such file[0m"}
+
+# Load /etc/devops/functions.conf if FUNC_CONFIG is unset
+if [ -z "$FUNC_CONFIG" ] && [ -f /etc/devops/functions.conf ]; then
+	source /etc/devops/functions.conf
+fi
+
+${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m"}
+
+################################## Variables ##################################
+
+## Bash exec variables
+EXEC_OD=/usr/bin/od
+
+# Options
+oui="$1"
+ouiLen=0
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Display usage if help parameter given
+if [ ! -z "$1" ]; then
+
+  if [ "$1" == '-h' ]; then
+    printUsage "macaddr ${gold}[OUI]"
+    echo
+
+    exit 0
+  fi
+
+  # Display error if invalid OUI
+  if [[ ! "$oui" =~ ^[0-9a-fA-F]{2}:[0-9a-fA-F]{2}(:[0-9a-fA-F]{2})?:?$ ]]; then
+    printError 'macaddr' "Invalid OUI: $oui"
+    echo
+
+    printUsage "macaddr ${gold}[OUI]"
+
+    exit 1
+  fi
+
+  # Append : to OUI, if not already present
+  if [[ "$oui" != *: ]]; then
+    oui=$oui':'
+  fi
+
+  # Calculate the number of OUI segments provided on the command-line
+  numSegments="${oui//[^:]}"
+  ouiLen="${#numSegments}"
+
+fi
+
+################################### Actions ###################################
+
+# Generate a random 48-bit MAC address
+macAddress="$oui"
+blockSize=$[ 6 - $ouiLen ]
+i=1
+
+dev_urandom=($($EXEC_DD if=/dev/urandom bs=$blockSize count=1 status=none | $EXEC_OD -A x -t x1))
+
+if [ $ouiLen -eq 0 ]; then
+  macAddress=$(printf "%02x:" "$(( ( 16#${dev_urandom[1]} & 0xFC ) | 0x02 ))")
+  i=$i+1
+fi
+
+for ((; i < $blockSize; i++)); do
+  macAddress=$macAddress"${dev_urandom[i]}:"
+done
+
+macAddress=$macAddress"${dev_urandom[i]}"
+
+echo ${bold}$macAddress${reset}
+
+exit 0

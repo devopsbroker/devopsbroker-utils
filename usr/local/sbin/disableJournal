@@ -1,0 +1,137 @@
+#!/bin/bash
+
+#
+# disableJournal - DevOpsBroker script for disabling the ext3/ext4 journal on the given mount point
+#
+# Copyright (C) 2018-2019 Edward Smith <edwardsmith@devopsbroker.org>
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# -----------------------------------------------------------------------------
+# Developed on Ubuntu 16.04.5 LTS running kernel.osrelease = 4.15.0-30
+#
+# -----------------------------------------------------------------------------
+#
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Preprocessing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Load /etc/devops/ansi.conf if ANSI_CONFIG is unset
+if [ -z "$ANSI_CONFIG" ] && [ -f /etc/devops/ansi.conf ]; then
+	source /etc/devops/ansi.conf
+fi
+
+${ANSI_CONFIG?"[1;91mCannot load '/etc/devops/ansi.conf': No such file[0m"}
+
+# Load /etc/devops/exec.conf if EXEC_CONFIG is unset
+if [ -z "$EXEC_CONFIG" ] && [ -f /etc/devops/exec.conf ]; then
+	source /etc/devops/exec.conf
+fi
+
+${EXEC_CONFIG?"[1;91mCannot load '/etc/devops/exec.conf': No such file[0m"}
+
+# Load /etc/devops/functions.conf if FUNC_CONFIG is unset
+if [ -z "$FUNC_CONFIG" ] && [ -f /etc/devops/functions.conf ]; then
+	source /etc/devops/functions.conf
+fi
+
+${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m"}
+
+# Load /etc/devops/functions-io.conf if FUNC_IO_CONFIG is unset
+if [ -z "$FUNC_IO_CONFIG" ] && [ -f /etc/devops/functions-io.conf ]; then
+	source /etc/devops/functions-io.conf
+fi
+
+${FUNC_IO_CONFIG?"[1;91mCannot load '/etc/devops/functions-io.conf': No such file[0m"}
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Robustness ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+set -o errexit                 # Exit if any statement returns a non-true value
+set -o nounset                 # Exit if use an uninitialised variable
+set -o pipefail                # Exit if any statement in a pipeline returns a non-true value
+IFS=$'\n\t'                    # Default the Internal Field Separator to newline and tab
+
+scriptName='disableJournal'
+
+# Display error if not running as root
+if [ "$USER" != 'root' ]; then
+	printError $scriptName 'Permission denied (you must be root)'
+	exit 1
+fi
+
+################################## Variables ##################################
+
+## Bash exec variables
+EXEC_DEBUGFS=/sbin/debugfs
+EXEC_FINDMNT=/bin/findmnt
+EXEC_FSCK=/sbin/fsck
+EXEC_TUNE2FS=/sbin/tune2fs
+
+## Options
+mountPoint="$1"
+
+## Variables
+mountInfo=''
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Display usage if no parameters given
+if [ -z "$mountPoint" ]; then
+  printUsage 'disableJournal MOUNT_DIR'
+  echo
+
+  exit 1
+fi
+
+errorMessage=$(isValidDirectory 'disableJournal' "$mountPoint")
+
+# Display error if directory parameter is missing or invalid
+if [ "$errorMessage" != '0' ]; then
+  echo "$errorMessage"
+  echo
+  printUsage 'disableJournal MOUNT_DIR'
+
+  exit 1
+fi
+
+mountInfo=( $($EXEC_FINDMNT -n "$mountPoint") )
+
+# Display error if mount point parameter is invalid
+if [ ${#mountInfo[@]} -eq 0 ]; then
+  printError 'disableJournal' "Invalid mount point '$mountPoint'"
+  echo
+  printUsage 'disableJournal MOUNT_DIR'
+
+  exit 1
+fi
+
+################################### Actions ###################################
+
+filesystem=${mountInfo[2]}
+
+if [[ $filesystem =~ ^(ext3|ext4)$ ]]; then
+  device=${mountInfo[1]}
+
+  if $EXEC_DEBUGFS -R features $device | $EXEC_GREP -Fq 'has_journal'; then
+    # Unmount mount point
+    $EXEC_UMOUNT "$mountPoint"
+
+    # Disable journal
+    $EXEC_TUNE2FS -O ^has_journal $device
+
+    # Execute filesystem check
+    $EXEC_FSCK.$filesystem -f $device
+  fi
+fi
+
+exit 0

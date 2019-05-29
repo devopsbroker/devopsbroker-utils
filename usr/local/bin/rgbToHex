@@ -1,0 +1,84 @@
+#!/bin/bash
+
+#
+# rgbToHex - DevOpsBroker utility for converting an RGB color code to a Hex color code
+#
+# Copyright (C) 2018 Edward Smith <edwardsmith@devopsbroker.org>
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# -----------------------------------------------------------------------------
+# Developed on Ubuntu 16.04.4 LTS running kernel.osrelease = 4.13.0-43
+#
+# Convert RGB color codes to hexadecimal color codes.
+#
+# Parameters:
+#   $1: Red color code
+#   $2: Green color code
+#   $3: Blue color code
+# -----------------------------------------------------------------------------
+#
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Preprocessing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Load /etc/devops/ansi.conf if ANSI_CONFIG is unset
+if [ -z "$ANSI_CONFIG" ] && [ -f /etc/devops/ansi.conf ]; then
+	source /etc/devops/ansi.conf
+fi
+
+${ANSI_CONFIG?"[1;91mCannot load '/etc/devops/ansi.conf': No such file[0m"}
+
+# Load /etc/devops/exec.conf if EXEC_CONFIG is unset
+if [ -z "$EXEC_CONFIG" ] && [ -f /etc/devops/exec.conf ]; then
+	source /etc/devops/exec.conf
+fi
+
+${EXEC_CONFIG?"[1;91mCannot load '/etc/devops/exec.conf': No such file[0m"}
+
+# Load /etc/devops/functions.conf if FUNC_CONFIG is unset
+if [ -z "$FUNC_CONFIG" ] && [ -f /etc/devops/functions.conf ]; then
+	source /etc/devops/functions.conf
+fi
+
+${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m"}
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Display usage if no parameters given
+if [ -z "$1" ] || [ -z "$2" ] || [ -z "$3" ]; then
+	printUsage 'rgbToHex RED GREEN BLUE'
+	exit 1
+fi
+
+# Display error if parameter is not a valid RGB color
+if [[ ! "$1" =~ ^[0-9]{1,3}$ ]] || [ $1 -gt 255 ] || \
+	[[ ! "$2" =~ ^[0-9]{1,3}$ ]] || [ $2 -gt 255 ] || \
+	[[ ! "$3" =~ ^[0-9]{1,3}$ ]] || [ $3 -gt 255 ]; then
+		printError 'rgbToHex' "Invalid RGB color: $1 $2 $3"
+		echo
+		printUsage 'rgbToHex RED GREEN BLUE'
+
+		exit 1
+fi
+
+################################### Actions ###################################
+
+hexCode=$( printf "%02x" $1 )
+hexCode=$hexCode$( printf "%02x" $2 )
+hexCode=$hexCode$( printf "%02x" $3 )
+hexCode="${hexCode^^}"
+
+echo "${bold}rgb($1, $2, $3) -> $(rgb $1 $2 $3)#$hexCode${reset}"
+
+exit 0

@@ -1,0 +1,174 @@
+#!/bin/bash
+
+#
+# tints - DevOpsBroker utility for generating tinted RGB colors
+#
+# Copyright (C) 2018 Edward Smith <edwardsmith@devopsbroker.org>
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# -----------------------------------------------------------------------------
+# Developed on Ubuntu 16.04.5 LTS running kernel.osrelease = 4.15.0-34
+#
+# Note: The # symbol needs to be escaped on the command line, if present, as
+#	Bash interprets it as the beginning of a comment otherwise.
+#
+# Parameters:
+#   $1: Hex color code
+#   $2: To Hex color code / Tint factor (optional)
+#   $3: Tint factor (optional)
+# -----------------------------------------------------------------------------
+#
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Preprocessing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Load /etc/devops/ansi.conf if ANSI_CONFIG is unset
+if [ -z "$ANSI_CONFIG" ] && [ -f /etc/devops/ansi.conf ]; then
+	source /etc/devops/ansi.conf
+fi
+
+${ANSI_CONFIG?"[1;91mCannot load '/etc/devops/ansi.conf': No such file[0m"}
+
+# Load /etc/devops/exec.conf if EXEC_CONFIG is unset
+if [ -z "$EXEC_CONFIG" ] && [ -f /etc/devops/exec.conf ]; then
+	source /etc/devops/exec.conf
+fi
+
+${EXEC_CONFIG?"[1;91mCannot load '/etc/devops/exec.conf': No such file[0m"}
+
+# Load /etc/devops/functions.conf if FUNC_CONFIG is unset
+if [ -z "$FUNC_CONFIG" ] && [ -f /etc/devops/functions.conf ]; then
+	source /etc/devops/functions.conf
+fi
+
+${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m"}
+
+################################## Functions ##################################
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     showHelp
+# Description:  Displays help message to the user
+# -----------------------------------------------------------------------------
+function showHelp() {
+	# BEGIN showHelp function
+
+	printUsage 'tints HEX_CODE'
+	printUsage 'false' "tints HEX_CODE ${gold}[TINT_FACTOR]"
+	printUsage 'false' "tints HEX_CODE ${gold}[TO_HEX_CODE] [TINT_FACTOR]"
+
+	# END showHelp function
+}
+
+################################## Variables ##################################
+
+## Options
+fromHexCode="$1"
+
+## Variables
+toHexCode="#FFFFFF"
+tintFactor=0.20
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Display usage if no parameters given
+if [ -z "$fromHexCode" ]; then
+	showHelp
+	exit 1
+fi
+
+# Display error if parameter is not a valid hex color code
+if [[ ! "$fromHexCode" =~ ^\#?[a-fA-F0-9]{6}$ ]]; then
+	printError 'tints' "Invalid hex color code: $fromHexCode"
+	echo
+	showHelp
+
+	exit 1
+fi
+
+if [ ! -z "$2" ]; then
+
+	optionValue="$2"
+	if [[ "$optionValue" =~ ^\#?[a-fA-F0-9]{6}$ ]]; then
+		toHexCode=$optionValue
+
+		optionValue="$3"
+	fi
+
+	if [[ "$optionValue" =~ ^0\.[0-9]{1,2}$ ]]; then
+		tintFactor=$optionValue
+	elif [[ "$optionValue" =~ ^[0-9]{1,2}%$ ]]; then
+		tintFactor=$(printf %.2f $(echo "scale=2; ${optionValue::-1} / 100" | bc))
+	fi
+
+fi
+
+# Remove hash character, if present
+if [ ${#fromHexCode} -eq 7 ]; then
+	fromHexCode="${fromHexCode:1}"
+fi
+
+if [ ${#toHexCode} -eq 7 ]; then
+	toHexCode="${toHexCode:1}"
+fi
+
+# Calculate toAlphaRed / toAlphaGreen / toAlphaBlue
+toAlphaRed=$((16#${toHexCode:0:2}))
+toAlphaGreen=$((16#${toHexCode:2:2}))
+toAlphaBlue=$((16#${toHexCode:4:2}))
+
+################################### Actions ###################################
+
+# Create the tint list
+tintList=("#${fromHexCode}")
+
+# Calcualte the RGB color code from the Hex color code
+red=$((16#${fromHexCode:0:2}))
+green=$((16#${fromHexCode:2:2}))
+blue=$((16#${fromHexCode:4:2}))
+
+# Create RGB color code list
+rgbList=("[48;2;$red;$green;${blue}m")
+
+for x in 1 2 3 4 5 6 7 8 9 10; do
+
+	# Calculate tint RGB color code
+	red=$(printf %.0f $(echo "$red + (($toAlphaRed - $red) * $tintFactor)" | $EXEC_BC))
+	green=$(printf %.0f $(echo "$green + (($toAlphaGreen - $green) * $tintFactor)" | $EXEC_BC))
+	blue=$(printf %.0f $(echo "$blue + (($toAlphaBlue - $blue) * $tintFactor)" | $EXEC_BC))
+
+	# Calculate tint Hex color code
+	fromHexCode=$( printf "%02x" $red )
+	fromHexCode=$fromHexCode$( printf "%02x" $green )
+	fromHexCode=$fromHexCode$( printf "%02x" $blue )
+
+	tintList+=("#${fromHexCode^^}")
+	rgbList+=("[48;2;$red;$green;${blue}m")
+done
+
+tintList+=("#${toHexCode}")
+rgbList+=("[48;2;$toAlphaRed;$toAlphaGreen;${toAlphaBlue}m")
+
+echo ${black}
+for x in 0 1 2 3 4 5 6 7 8 9 10 11; do
+	if [ $x -gt 0 ]; then
+		echo -n ${reset}' '${black}
+	fi
+
+	echo -n ${rgbList[$x]}" ${tintList[$x]} "
+done
+
+echo ${reset}
+echo
+
+exit 0

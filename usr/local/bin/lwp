@@ -1,0 +1,354 @@
+#!/bin/bash
+
+#
+# lwp - DevOpsBroker utility for monitoring and retrieving Linux threads information
+#
+# Copyright (C) 2018 Edward Smith <edwardsmith@devopsbroker.org>
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# -----------------------------------------------------------------------------
+# Developed on Ubuntu 16.04.5 LTS running kernel.osrelease = 4.15.0-32
+#
+# Handy utility to check the number of active threads running in Linux.
+# -----------------------------------------------------------------------------
+#
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Preprocessing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Load /etc/devops/ansi.conf if ANSI_CONFIG is unset
+if [ -z "$ANSI_CONFIG" ] && [ -f /etc/devops/ansi.conf ]; then
+	source /etc/devops/ansi.conf
+fi
+
+${ANSI_CONFIG?"[1;91mCannot load '/etc/devops/ansi.conf': No such file[0m"}
+
+# Load /etc/devops/exec.conf if EXEC_CONFIG is unset
+if [ -z "$EXEC_CONFIG" ] && [ -f /etc/devops/exec.conf ]; then
+	source /etc/devops/exec.conf
+fi
+
+${EXEC_CONFIG?"[1;91mCannot load '/etc/devops/exec.conf': No such file[0m"}
+
+# Load /etc/devops/functions.conf if FUNC_CONFIG is unset
+if [ -z "$FUNC_CONFIG" ] && [ -f /etc/devops/functions.conf ]; then
+	source /etc/devops/functions.conf
+fi
+
+${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m"}
+
+# Display error if running as root
+if [ "$USER" == 'root' ]; then
+	printError 'lwp' 'Permission denied (you cannot be root)'
+	exit 1
+fi
+
+################################## Functions ##################################
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     printColumn
+# Description:  Writes tabs to STDOUT to properly format a display column
+#
+# Parameter $1: The length of the column
+# Parameter $2: The item to print
+# -----------------------------------------------------------------------------
+function printColumn() {
+	# BEGIN printColumn function
+
+	local colLength="$1"
+	shift
+	local item="$@"
+	local itemLength=${#item}
+
+	echo -n "$item"
+
+	while [ $itemLength -lt $colLength ]; do
+		echo -e -n '\t'
+		itemLength=$[ $itemLength + 8 ]
+	done
+
+	# END printColumn function
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     printLine
+# Description:  Prints a dynamic length line
+#
+# Parameter $1: The length of the line to print
+# -----------------------------------------------------------------------------
+function printLine() {
+	# BEGIN printLine function
+
+	local lineLength="$1"
+
+	for (( i=0; i < $lineLength; i++ )); do
+		echo -n '-'
+	done
+
+	echo
+
+	# END printLine function
+}
+
+################################## Variables ##################################
+
+## Bash exec variables
+EXEC_PIDOF=/bin/pidof
+EXEC_PS=/bin/ps
+
+## Options
+command=${1:-'stat'}
+
+## Variables
+validCommands=('ids' 'list' 'stat')
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Display error if invalid command
+if [ $(containsElement "$command" "${validCommands[@]}") != '0' ]; then
+	printError 'lwp' "Invalid command: $command"
+	echo
+	printUsage 'lwp { ids | list | stat }'
+
+	exit 1
+fi
+
+################################### Actions ###################################
+
+if [ $command == 'ids' ]; then
+
+	processName="$2"
+
+	if [ -z "$processName" ]; then
+		printError 'lwp' 'Missing process name parameter'
+		echo
+		printUsage 'lwp ids { PID | PROCESS_NAME }'
+	elif [[ "$processName" =~ ^[0-9]+$ ]]; then
+		pid="$processName"
+
+		if [ ! -d /proc/$pid ]; then
+			printError 'lwp' "Cannot find process '$pid': No such PID"
+			echo
+			printUsage 'lwp ids { PID | PROCESS_NAME }'
+
+			exit 1
+		fi
+
+		$EXEC_PS -L --format lwp --no-headers $pid
+	else
+		pidList=($($EXEC_PIDOF "$processName"))
+
+		if [ -z "$pidList" ]; then
+			printError 'lwp' "Cannot find process '$processName': No such PID"
+			echo
+			printUsage 'lwp ids { PID | PROCESS_NAME }'
+
+			exit 1
+		fi
+
+		for pid in "${pidList[@]}"; do
+			$EXEC_PS -L --format lwp --no-headers $pid
+		done
+	fi
+elif [ $command == 'list' ]; then
+	processName="$2"
+
+	if [ -z "$processName" ]; then
+		printBox 'Listing all processes and threads'
+
+		$EXEC_PS -fL --no-header | $EXEC_CUT -c 31- | $EXEC_SORT | $EXEC_UNIQ -c | $EXEC_SORT -nrk 1
+	elif [[ "$processName" =~ ^[0-9]+$ ]]; then
+		pid="$processName"
+
+		if [ ! -d /proc/$pid ]; then
+			printError 'lwp' "Cannot find process '$pid': No such PID"
+			echo
+			printUsage 'lwp list { PID | PROCESS_NAME }'
+
+			exit 1
+		fi
+
+		printBox "Listing threads for process '$pid'"
+
+		$EXEC_PS -p $pid -fL
+	else
+		pidList=($($EXEC_PIDOF "$processName"))
+
+		if [ -z "$pidList" ]; then
+			printError 'lwp' "Cannot find process '$processName': No such PID"
+			echo
+			printUsage 'lwp list { PID | PROCESS_NAME }'
+
+			exit 1
+		fi
+
+		printBox "Listing threads for process '$processName'"
+
+		for pid in "${pidList[@]}"; do
+			printBanner "Threads for PID '$pid'"
+
+			$EXEC_PS -p $pid -fL
+		done
+	fi
+
+	echo
+
+elif [ $command == 'stat' ]; then
+
+	userName="$2"
+
+	if [ -z "$userName" ]; then
+		KERNEL_MAX_THREADS=$($EXEC_CAT /proc/sys/kernel/threads-max)
+
+		printBox 'Thread statistics for all users'
+
+		totalNumThreads=0
+		numThreadsColSize=0
+		usernameColSize=0
+
+		IFS=$'\n'; userThreadList=($($EXEC_PS -eL --format user --no-headers | $EXEC_SORT | $EXEC_UNIQ -c)); unset IFS;
+
+		for userThread in "${userThreadList[@]}"; do
+			userStats=($userThread)
+
+			totalNumThreads=$[ $totalNumThreads + ${userStats[0]} ]
+			numThreadsColSize=$[ ${#userStats[0]} > $numThreadsColSize ? ${#userStats[0]} : $numThreadsColSize ]
+			usernameColSize=$[ ${#userStats[1]} > $usernameColSize ? ${#userStats[1]} : $usernameColSize ]
+		done
+
+		numThreadsColSize=$[ ($numThreadsColSize + 7) / 8 * 8 ]
+		usernameColSize=$[ ($usernameColSize + 7) / 8 * 8 ]
+
+		echo -n ${bold}
+		printColumn $usernameColSize 'USER'
+		printColumn $numThreadsColSize 'NLWP'
+		echo "PCT"
+
+		printLine $[ $usernameColSize + $numThreadsColSize + 6 ]
+
+		for userThread in "${userThreadList[@]}"; do
+			userStats=($userThread)
+
+			echo -n ${romantic}
+			printColumn $usernameColSize ${userStats[1]}
+
+			echo -n ${gold}
+			printColumn $numThreadsColSize ${userStats[0]}
+
+			echo -n ${romantic}
+			printf '%1.2f%%\n' "$(echo "scale=2; ${userStats[0]} * 100 / $totalNumThreads" | $EXEC_BC)"
+		done
+
+		echo -n ${white}
+		printLine $[ $usernameColSize + $numThreadsColSize + 6 ]
+
+		threadMaxPercent=$(echo "scale=2; $totalNumThreads * 100 / $KERNEL_MAX_THREADS" | $EXEC_BC)
+		tmpInteger=${threadMaxPercent::-3}
+
+		if [ $tmpInteger -lt 50 ]; then
+			color=${green}
+		elif [ $tmpInteger -lt 80 ]; then
+			color=${yellow}
+		else
+			color=${red}
+		fi
+
+		printColumn $usernameColSize 'Total:'
+
+		echo -n ${color}
+		printColumn $numThreadsColSize $totalNumThreads
+
+		printf "${color}%1.2f%%\n" "$threadMaxPercent"
+	else
+		# Display error if invalid username parameter given
+		if [ -z "$($EXEC_GETENT passwd $userName)" ]; then
+			printError 'lwp' "Cannot find '$userName': No such user"
+			echo
+			printUsage "lwp stat ${gold}[USER]"
+
+			exit 1
+		fi
+
+		USER_MAX_THREADS=$(ulimit -u)
+
+		printBox "Thread statistics for '$userName'"
+
+		IFS=$'\n'; threadList=($($EXEC_PS -L --format ucmd --no-headers -U $userName -u $userName | $EXEC_SORT | $EXEC_UNIQ -c | $EXEC_SORT -n)); unset IFS;
+
+		totalNumThreads=0
+		numThreadsColSize=4
+		threadNameColSize=6
+
+		for thread in "${threadList[@]}"; do
+			threadStats=($thread)
+			threadName="${threadStats[@]:1}"
+
+			totalNumThreads=$[ $totalNumThreads + ${threadStats[0]} ]
+			numThreadsColSize=$[ ${#threadStats[0]} > $numThreadsColSize ? ${#threadStats[0]} : $numThreadsColSize ]
+			threadNameColSize=$[ ${#threadName} > $threadNameColSize ? ${#threadName} : $threadNameColSize ]
+		done
+
+		if [ $[ $threadNameColSize % 8 ] -gt 4 ]; then
+			threadNameColSize=$[ $threadNameColSize + ($threadNameColSize % 8) - 4 ]
+		fi
+
+		numThreadsColSize=$[ ($numThreadsColSize + 7) / 8 * 8 ]
+		threadNameColSize=$[ ($threadNameColSize + 7) / 8 * 8 ]
+
+		echo -n ${bold}
+		printColumn $threadNameColSize 'THREAD'
+		printColumn $numThreadsColSize 'NLWP'
+		echo "PCT"
+
+		printLine $[ $threadNameColSize + $numThreadsColSize + 6 ]
+
+		for thread in "${threadList[@]}"; do
+			threadStats=($thread)
+			threadName="${threadStats[@]:1}"
+
+			echo -n ${romantic}
+			printColumn $threadNameColSize "$threadName"
+
+			echo -n ${gold}
+			printColumn $numThreadsColSize ${threadStats[0]}
+
+			echo
+		done
+
+		echo -n ${white}
+		printLine $[ $threadNameColSize + $numThreadsColSize + 6 ]
+
+		userThreadMaxPercent=$(echo "scale=2; $totalNumThreads * 100 / $USER_MAX_THREADS" | $EXEC_BC)
+		utmpInteger=${userThreadMaxPercent::-3}
+
+		if [ $utmpInteger -lt 50 ]; then
+			color=${green}
+		elif [ $utmpInteger -lt 80 ]; then
+			color=${yellow}
+		else
+			color=${red}
+		fi
+
+		printColumn $threadNameColSize 'Total:'
+
+		echo -n ${color}
+		printColumn $numThreadsColSize $totalNumThreads
+
+		printf "${color}%1.2f%%\n" "$userThreadMaxPercent"
+	fi
+
+	echo
+fi
+
+exit 0

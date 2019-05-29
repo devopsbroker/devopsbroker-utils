@@ -1,0 +1,194 @@
+#!/bin/bash
+
+#
+# favicon - DevOpsBroker script for generating website favicons
+#
+# Copyright (C) 2018-2019 Edward Smith <edwardsmith@devopsbroker.org>
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# -----------------------------------------------------------------------------
+# Developed on Ubuntu 16.04.4 LTS running kernel.osrelease = 4.13.0-45
+#
+# One of the cool things about this tool is that it won't resize source PNG
+# images *larger*. If the source PNG image is only 32x32 then favicon-16.png
+# and favicon-32.png will *only* be created and added to the favicon.ico file.
+#
+# Generates the favicon.ico file with the following PNG files:
+#   o favicon-16.png
+#   o favicon-32.png
+#   o favicon-48.png
+#   o favicon-64.png
+#
+# Also can generate a favicon-192.png icon for Android/iOS application icons.
+# -----------------------------------------------------------------------------
+#
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Preprocessing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Load /etc/devops/ansi.conf if ANSI_CONFIG is unset
+if [ -z "$ANSI_CONFIG" ] && [ -f /etc/devops/ansi.conf ]; then
+	source /etc/devops/ansi.conf
+fi
+
+${ANSI_CONFIG?"[1;91mCannot load '/etc/devops/ansi.conf': No such file[0m"}
+
+# Load /etc/devops/exec.conf if EXEC_CONFIG is unset
+if [ -z "$EXEC_CONFIG" ] && [ -f /etc/devops/exec.conf ]; then
+	source /etc/devops/exec.conf
+fi
+
+${EXEC_CONFIG?"[1;91mCannot load '/etc/devops/exec.conf': No such file[0m"}
+
+# Load /etc/devops/functions.conf if FUNC_CONFIG is unset
+if [ -z "$FUNC_CONFIG" ] && [ -f /etc/devops/functions.conf ]; then
+	source /etc/devops/functions.conf
+fi
+
+${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m"}
+
+# Load /etc/devops/functions-io.conf if FUNC_IO_CONFIG is unset
+if [ -z "$FUNC_IO_CONFIG" ] && [ -f /etc/devops/functions-io.conf ]; then
+	source /etc/devops/functions-io.conf
+fi
+
+${FUNC_IO_CONFIG?"[1;91mCannot load '/etc/devops/functions-io.conf': No such file[0m"}
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Robustness ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+set -o errexit                 # Exit if any statement returns a non-true value
+set -o nounset                 # Exit if use an uninitialised variable
+set -o pipefail                # Exit if any statement in a pipeline returns a non-true value
+IFS=$'\n\t'                    # Default the Internal Field Separator to newline and tab
+
+scriptName='favicon'
+
+################################## Functions ##################################
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     generateFavicon
+# Description:  Converts the PNG to the specified favicon
+#
+# Parameter $1: The size of the favicon to generate
+# -----------------------------------------------------------------------------
+function generateFavicon() {
+
+	if [ $pngWidth -ge $1 ]; then
+		printInfo "Converting $pngFile to $1x$1 favicon-$1.png"
+		$EXEC_CONVERT "$pngFile" -resize $1x$1 -quality 92 -strip "$TMPDIR/favicon-$1.png"
+		icoArray+=("$TMPDIR/favicon-$1.png")
+		icoSizeArray+=("$1x$1")
+	fi
+
+}
+
+################################## Variables ##################################
+
+## Bash exec variables
+EXEC_CONVERT=/usr/bin/convert
+EXEC_IDENTIFY=/usr/bin/identify
+
+## Options
+pngFile="$1"
+
+## Variables
+export TMPDIR=${TMPDIR:-'/tmp'}
+icoArray=()
+icoSizeArray=()
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+errorMessage=$(isValidFile 'favicon' "$pngFile")
+
+# Display error if file parameter is missing or invalid
+if [ "$errorMessage" != '0' ]; then
+	echo "$errorMessage"
+	echo
+	printUsage 'favicon PNG'
+
+	exit 1
+fi
+
+fileIdArray=($($EXEC_IDENTIFY "$pngFile"))
+fileIdArrayLen=${#fileIdArray[@]}
+
+# Display error if file is invalid
+if [ $fileIdArrayLen -eq 0 ] || [ "${fileIdArray[1]}" != 'PNG' ]; then
+	printError 'favicon' "Invalid PNG file: $pngFile"
+	echo
+	printUsage 'favicon PNG'
+
+	exit 1
+fi
+
+IFS='x'; dimensionInfo=(${fileIdArray[2]}); unset IFS;
+pngWidth=${dimensionInfo[0]}
+pngHeight=${dimensionInfo[1]}
+
+# Display error if dimensions are invalid
+if [ $pngWidth -ne $pngHeight ] || [ $pngWidth -lt 16 ]; then
+	printError 'favicon' "Invalid PNG dimensions: ${fileIdArray[2]}"
+	echo
+	printUsage 'favicon PNG'
+
+	exit 1
+fi
+
+################################### Actions ###################################
+
+printBanner 'Generating favicons'
+
+# Generate default favicons
+generateFavicon 16
+generateFavicon 32
+generateFavicon 48
+generateFavicon 64
+
+# Generate favicon.ico
+printInfo 'Creating favicon.ico'
+
+icoList=${icoArray[*]}
+icoSizeList=${icoSizeArray[*]}
+
+$EXEC_CONVERT $icoList favicon.ico
+$EXEC_RM $icoList
+
+echo
+
+# Generate high resolution icon
+if [ $pngWidth -ge 192 ]; then
+	generateFavicon 192
+	hiResIcon=true
+fi
+
+printBox "DevOpsBroker $UBUNTU_RELEASE Favicon Generator Instructions" 'true'
+
+echo '1. Place favicon.ico in the root directory of your website'
+echo '2. Configure your web server (apache/nginx) to compress favicon.ico'
+echo '3. Add the following <link> tag to the <head> section of your HTML files'
+echo ${green}
+echo '<link rel="icon" sizes="'$icoSizeList'" href="/favicon.ico" type="image/x-icon">'
+
+if [ ! -z $hiResIcon ]; then
+	echo ${white}
+	echo '4. Use favicon-192.png on your website in order to support Android/iOS application icons'
+	echo '5. Add the following <link> tags to the <head> section of your HTML files'
+	echo ${green}
+	echo '<link rel="apple-touch-icon" sizes="192x192" href="favicon-192.png" type="image/png">'
+	echo '<link rel="icon" sizes="192x192" href="favicon-192.png" type="image/png">'
+fi
+
+echo ${reset}
+
+exit 0

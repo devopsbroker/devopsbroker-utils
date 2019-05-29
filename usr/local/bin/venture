@@ -1,0 +1,509 @@
+#!/bin/bash
+
+#
+# venture - DevOpsBroker utility for managing software projects including
+#           project creation, compile, build, test, and deploy
+#
+# Copyright (C) 2018-2019 Edward Smith <edwardsmith@devopsbroker.org>
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# -----------------------------------------------------------------------------
+# Developed on Ubuntu 16.04.4 LTS running kernel.osrelease = 4.13.0-43
+#
+# TODO: new - Create new files (.s/.cpp/.whatever)
+# -----------------------------------------------------------------------------
+#
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Preprocessing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Load /etc/devops/ansi.conf if ANSI_CONFIG is unset
+if [ -z "$ANSI_CONFIG" ] && [ -f /etc/devops/ansi.conf ]; then
+	source /etc/devops/ansi.conf
+fi
+
+${ANSI_CONFIG?"[1;91mCannot load '/etc/devops/ansi.conf': No such file[0m"}
+
+# Load /etc/devops/exec.conf if EXEC_CONFIG is unset
+if [ -z "$EXEC_CONFIG" ] && [ -f /etc/devops/exec.conf ]; then
+	source /etc/devops/exec.conf
+fi
+
+${EXEC_CONFIG?"[1;91mCannot load '/etc/devops/exec.conf': No such file[0m"}
+
+# Load /etc/devops/functions.conf if FUNC_CONFIG is unset
+if [ -z "$FUNC_CONFIG" ] && [ -f /etc/devops/functions.conf ]; then
+	source /etc/devops/functions.conf
+fi
+
+${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m"}
+
+# Load /etc/devops/functions-io.conf if FUNC_IO_CONFIG is unset
+if [ -z "$FUNC_IO_CONFIG" ] && [ -f /etc/devops/functions-io.conf ]; then
+	source /etc/devops/functions-io.conf
+fi
+
+${FUNC_IO_CONFIG?"[1;91mCannot load '/etc/devops/functions-io.conf': No such file[0m"}
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Robustness ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+set -o errexit                 # Exit if any statement returns a non-true value
+set -o nounset                 # Exit if use an uninitialised variable
+set -o pipefail                # Exit if any statement in a pipeline returns a non-true value
+IFS=$'\n\t'                    # Default the Internal Field Separator to newline and tab
+
+## Script information
+SCRIPT_INFO=( $($EXEC_SCRIPTINFO "$BASH_SOURCE") )
+SCRIPT_DIR="${SCRIPT_INFO[0]}"
+SCRIPT_EXEC="${SCRIPT_INFO[1]}"
+
+################################## Functions ##################################
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     createDirectory
+# Description:  Creates a directory
+#
+# Parameter $1: The name of the directory to create within the base directory
+# -----------------------------------------------------------------------------
+function createDirectory() {
+	if [ ! -d "$baseDir/$1" ]; then
+		printInfo "Creating $baseDir/$1 directory"
+		$EXEC_MKDIR --parents "$baseDir/$1"
+	fi
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     showHelp
+# Description:  Displays help message to the user
+# -----------------------------------------------------------------------------
+function showHelp() {
+	# BEGIN showHelp function
+
+	if [ "$command" == 'bashcomplete' ]; then
+		printUsage "venture bashcomplete ${gold}[-d directory] ${yellow}${paramNameMap['bashcomplete']}"
+		echo ${romantic}
+		echo 'Creates a Bash complete script'${reset}
+	elif [ "$command" == 'create' ]; then
+		printUsage "venture create ${gold}[-d directory] ${yellow}${paramNameMap['create']}"
+		echo ${romantic}
+		echo 'Creates a brand new C project'${reset}
+	elif [ "$command" == 'fileinfo' ]; then
+		printUsage "venture fileinfo ${gold}[-d directory] ${yellow}${paramNameMap['fileinfo']}"
+		echo ${romantic}
+		echo 'Generates HTML with information on the given file'${reset}
+	elif [ "$command" == 'new' ]; then
+		printUsage "venture new ${gold}[-d directory] ${yellow}${paramNameMap['new']}"
+		echo ${romantic}
+		echo 'Creates a new file'${reset}
+		echo
+		echo ${bold}${white}'Valid File Types:'${reset}
+		echo -e ${bold}${yellow}'  source.asm\t'    ${romantic}'NASM Assembly language source file'
+		echo -e ${bold}${yellow}'  source.c\t'      ${romantic}'C language source file'
+		echo -e ${bold}${yellow}'  header.h\t'      ${romantic}'C language header file'
+		echo -e ${bold}${yellow}'  linux.conf\t'    ${romantic}'Linux configuration file'
+		echo -e ${bold}${yellow}'  index.html\t'    ${romantic}'Blank HTML5 file'
+		echo -e ${bold}${yellow}'  makefile\t'      ${romantic}'Makefile build file'
+		echo -e ${bold}${yellow}'  script.sh\t'     ${romantic}'Bash shell script file'
+		echo -e ${bold}${yellow}'  template.tpl\t'  ${romantic}'Bash shell template file'
+	elif [ "$command" == 'struct' ]; then
+		printUsage "venture struct ${gold}[-d directory] ${yellow}${paramNameMap['struct']}"
+		echo ${romantic}
+		echo 'Creates a new C struct header and source files'${reset}
+	elif [ "$command" == 'enum' ]; then
+		printUsage "venture enum ${gold}[-d directory] ${yellow}${paramNameMap['enum']}"
+		echo ${romantic}
+		echo 'Creates a new C enum header and source files'${reset}
+	elif [ "$command" == 'timestamp' ]; then
+		printUsage 'venture timestamp { changelog }'
+		echo ${romantic}
+		echo 'Generates a proper timestamp for changelog entries'${reset}
+	fi
+
+	if [ "$command" != 'timestamp' ]; then
+		echo ${reset}
+		echo ${bold}${white}'Valid Options:'${reset}
+		echo -e ${bold}${yellow}'  -d directory\t'  ${romantic}'The target directory'
+		echo ${reset}
+	fi
+}
+
+################################## Variables ##################################
+
+## Bash exec variables
+EXEC_SHA256SUM=/usr/bin/sha256sum
+EXEC_VERIFYCLASS=/usr/local/bin/verifyclass
+EXEC_WHICH=/usr/bin/which
+
+## Options
+command=${1:-}
+baseDir='.'
+
+## Variables
+validCommands=( 'bashcomplete' 'create' 'enum' 'fileinfo' 'new' 'struct' 'timestamp' )
+showCommandHelp=false
+
+declare -A paramNameMap
+
+paramNameMap['bashcomplete']='COMMAND'
+paramNameMap['create']='PROJECT_NAME'
+paramNameMap['enum']='com.example.foo.Bar'
+paramNameMap['fileinfo']='FILE'
+paramNameMap['new']='FILE'
+paramNameMap['struct']='com.example.foo.Bar'
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+if [ "$command" == 'help' ]; then
+	showCommandHelp=true
+	command="$2"
+	shift
+fi
+
+# Display usage if no parameters given
+if [ -z "$command" ]; then
+	printUsage "venture ${gold}[help]${yellow} { bashcomplete | create | enum | fileinfo | new | struct | timestamp }"
+	exit 1
+fi
+
+# Display error if invalid command
+if [ $(containsElement "$command" "${validCommands[@]}") != '0' ]; then
+	printError 'venture' "Invalid command: '$command'"
+	echo
+	printUsage "venture ${gold}[help]${yellow} { bashcomplete | create | enum | fileinfo | new | struct | timestamp }"
+
+	exit 1
+fi
+
+if [ "$showCommandHelp" == 'true' ]; then
+	showHelp
+	exit 0
+fi
+
+# Process command-line options
+while [[ "$2" == -* ]]; do
+
+	# Base directory option
+	if [ "$2" == '-d' ]; then
+
+		errorMessage=$(isValidDirectory 'venture' "$3")
+
+		# Display error if directory parameter is missing or invalid
+		if [ "$errorMessage" != '0' ]; then
+			echo "$errorMessage"
+			echo
+			printUsage "venture $command ${gold}-d directory ${yellow}${paramNameMap[$command]}"
+
+			exit 1
+		fi
+
+		# baseDir is the third command-line parameter
+		baseDir="$3"
+		shift 2
+	else
+		# Display error and help if option parameter is not valid
+		printError 'venture' "Invalid option: '$2'"
+		echo
+		printUsage "venture $command ${gold}[-d directory] ${yellow}${paramNameMap[$command]}"
+
+		exit 1
+	fi
+done
+
+if [ "$command" == 'bashcomplete' ]; then
+	commandName="$2"
+
+	# Display error if no command parameter given
+	if [ -z "$commandName" ]; then
+		printError 'venture' 'Missing command name'
+		echo
+		printUsage "venture bashcomplete ${paramNameMap['bashcomplete']}"
+
+		exit 1
+	fi
+
+	# Display error if command does not exist or is not executable
+	if ! $EXEC_WHICH $commandName 1>/dev/null; then
+		printError 'venture' "Command not found: '$commandName'"
+		echo
+		printUsage "venture bashcomplete ${paramNameMap['bashcomplete']}"
+
+		exit 1
+	fi
+
+	# Display error if file already exists
+	if [ -f "${baseDir}/${commandName}" ]; then
+		printError 'venture' "File already exists: '${baseDir}/${commandName}'"
+		echo
+		printUsage "venture bashcomplete ${paramNameMap['bashcomplete']}"
+
+		exit 1
+	fi
+
+elif [ "$command" == 'create' ]; then
+	projectName="$2"
+
+	# Display error and usage if no project name parameter given
+	if [ -z "$projectName" ]; then
+		printError 'venture' 'Missing project name'
+		echo
+		printUsage "venture create ${paramNameMap['create']}"
+
+		exit 1
+	fi
+
+	baseDir="$baseDir/$projectName"
+
+elif [ "$command" == 'struct' ] || [ "$command" == 'enum' ]; then
+	className="$2"
+
+	# Display error if class name is missing
+	if [ -z "$className" ]; then
+		printError 'venture' "Missing C $command name"
+		echo
+		printUsage "venture $command ${paramNameMap[$command]}"
+
+		exit 1
+	fi
+
+	# Display error if class name is invalid
+	if ! $EXEC_VERIFYCLASS "$className"; then
+		printError 'venture' "Invalid C $command name: '$className'"
+		echo
+		printUsage "venture $command ${paramNameMap[$command]}"
+
+		exit 1
+	fi
+
+elif [ "$command" != 'timestamp' ]; then
+	fileName="$2"
+
+	# Display error and usage if no file name parameter given
+	if [ -z "$fileName" ]; then
+		printError 'venture' 'Missing file name'
+		echo
+		printUsage "venture $command ${paramNameMap['$command']}"
+
+		exit 1
+	fi
+
+	if [ "$command" == 'new' ]; then
+		# Display error and usage if unsupported file parameter given
+		if [[ ! "$fileName" =~ ^.+\.(asm|c|h|conf|html|sh|tpl)$ ]] && [ "$fileName" != 'makefile' ]; then
+			printError 'venture' "Unsupported file name '$fileName'"
+			echo
+			showHelp
+
+			exit 1
+		fi
+
+		# Display file exists info message and exit
+		if [ -f "$baseDir/$fileName" ]; then
+			printInfo "$baseDir/$fileName already exists; exiting"
+			exit 1
+		fi
+	fi
+fi
+
+################################### Actions ###################################
+
+# Make baseDir if not already exists
+if [ ! -d "$baseDir" ]; then
+	$EXEC_MKDIR --parents --mode=0750 "$baseDir"
+fi
+
+if [ "$command" == 'bashcomplete' ]; then
+	# Create a new Bash completion script
+
+	printInfo "Creating new Bash completion script '$commandName'"
+
+	# Set bash-complete.tpl location and make it executable
+	bashCompleteTpl=$(isExecutable "$SCRIPT_DIR/template/bash-complete.tpl")
+
+	# Execute template script
+	"$bashCompleteTpl" "$commandName" > "$baseDir/$commandName"
+
+elif [ "$command" == 'create' ]; then
+	# BEGIN Create new project
+
+	printBanner "Creating new project '$projectName'"
+
+	createDirectory 'bin'
+	createDirectory 'doc'
+	createDirectory 'lib'
+	createDirectory 'obj'
+	createDirectory 'res'
+	createDirectory 'src'
+	createDirectory 'test'
+
+	if [ ! -f "$baseDir/makefile" ]; then
+		# Create new makefile
+		printInfo "Creating $baseDir/makefile"
+
+		# Set makefile.tpl location and make it executable
+		makefileTpl=$(isExecutable "$SCRIPT_DIR"/template/makefile.tpl)
+
+		# Execute template script
+		"$makefileTpl" "$projectName" > "$baseDir/makefile"
+	fi
+
+	# Create a new C source file
+	sourceFile="${projectName,,}.c"
+	baseDir="$baseDir/src"
+
+	if [ ! -f "$baseDir/$sourceFile" ]; then
+		# Create a new C source file
+		printInfo "Creating $baseDir/$sourceFile"
+
+		# Set c-source-file.tpl location and make it executable
+		cSourceFileTpl=$(isExecutable "$SCRIPT_DIR"/template/c-source-file.tpl)
+
+		# Execute template script
+		"$cSourceFileTpl" "$sourceFile" > "$baseDir/$sourceFile"
+	fi
+
+	# END Create new project
+elif [ "$command" == 'fileinfo' ]; then
+	# BEGIN Generate file information
+
+	printInfo "Generate file information HTML for '$fileName'"
+
+	fileSize=$($EXEC_STAT --format=%s "$fileName")
+	sha256sum=$($EXEC_SHA256SUM "$fileName")
+
+	# Set fileinfo.tpl location and make it executable
+	fileInfoTpl=$(isExecutable "$SCRIPT_DIR"/template/fileinfo.tpl)
+
+	"$fileInfoTpl" "$fileName" $fileSize $sha256sum  > "$baseDir/fileinfo.html"
+
+	# END Generate file information
+elif [ "$command" == 'new' ]; then
+	# BEGIN Create new file
+
+	# Create a new NASM Assembly source file
+	if [[ "$fileName" == *.asm ]]; then
+		printInfo "Creating new NASM Assembly source file '$fileName'"
+
+		# Set asm-source-file.tpl location and make it executable
+		asmSourceFileTpl=$(isExecutable "$SCRIPT_DIR/template/asm-source-file.tpl")
+
+		# Execute template script
+		"$asmSourceFileTpl" "$fileName" > "$baseDir/$fileName"
+
+	# Create a new C source file
+	elif [[ "$fileName" == *.c ]]; then
+		fileName="${fileName,,}"
+		printInfo "Creating new C source file '$fileName'"
+
+		# Set c-source-file.tpl location and make it executable
+		cSourceFileTpl=$(isExecutable "$SCRIPT_DIR/template/c-source-file.tpl")
+
+		# Execute template script
+		"$cSourceFileTpl" "$fileName" > "$baseDir/$fileName"
+
+	# Create a new C header file
+	elif [[ "$fileName" == *.h ]]; then
+		printInfo "Creating new C header file '$fileName'"
+
+		# Set c-header-file.tpl location and make it executable
+		cHeaderFileTpl=$(isExecutable "$SCRIPT_DIR"/template/c-header-file.tpl)
+
+		# Execute template script
+		"$cHeaderFileTpl" "$fileName" > "$baseDir/$fileName"
+
+	# Create a new Linux configuration file
+	elif [[ "$fileName" == *.conf ]]; then
+		printInfo "Creating new Linux configuration file '$fileName'"
+
+		# Set linux-conf.tpl location and make it executable
+		linuxConfTpl=$(isExecutable "$SCRIPT_DIR"/template/linux-conf.tpl)
+
+		# Execute template script
+		"$linuxConfTpl" "$fileName" > "$baseDir/$fileName"
+
+	# Create a new blank HTML5
+	elif [[ "$fileName" == *.html ]]; then
+		printInfo "Creating new blank HTML5 file '$fileName'"
+
+		# Set html5.tpl location and make it executable
+		html5Tpl=$(isExecutable "$SCRIPT_DIR"/template/html5.tpl)
+
+		# Execute template script
+		"$html5Tpl" > "$baseDir/$fileName"
+
+	# Create a new Makefile build file
+	elif [ "$fileName" == 'makefile' ]; then
+		printInfo "Creating new Makefile build file"
+
+		# Set makefile.tpl location and make it executable
+		makefileTpl=$(isExecutable "$SCRIPT_DIR"/template/makefile.tpl)
+
+		# Execute template script
+		"$makefileTpl" 'foo' > "$baseDir/makefile"
+
+	# Create a new Bash shell script file
+	elif [[ "$fileName" == *.sh ]]; then
+		printInfo "Creating new Bash shell script '$fileName'"
+
+		# Set bash-script.tpl location and make it executable
+		bashScriptTpl=$(isExecutable "$SCRIPT_DIR"/template/bash-script.tpl)
+
+		# Execute template script and make Bash script executable
+		"$bashScriptTpl" "$fileName" > "$baseDir/$fileName"
+		$EXEC_CHMOD --changes u+x,g+x "$baseDir/$fileName"
+
+	# Create a new Bash shell template file
+	elif [[ "$fileName" == *.tpl ]]; then
+		printInfo "Creating new Bash shell template '$fileName'"
+
+		# Set bash-template.tpl location and make it executable
+		bashTemplateTpl=$(isExecutable "$SCRIPT_DIR"/template/bash-template.tpl)
+
+		# Execute template script and make Bash script executable
+		"$bashTemplateTpl" "$fileName" > "$baseDir/$fileName"
+		$EXEC_CHMOD --changes u+x,g+x "$baseDir/$fileName"
+	fi
+
+	# END Create new file
+elif [ "$command" == 'struct' ]; then
+	# BEGIN Create new C struct
+
+	printInfo "Creating new C struct '$className'"
+
+	# Set c-struct-source.tpl location and make it executable
+	cStructSourceTpl=$(isExecutable "$SCRIPT_DIR/template/c-struct-source.tpl")
+
+	# Execute template script
+	"$cStructSourceTpl" "$className"
+
+	# END Create new C struct
+elif [ "$command" == 'enum' ]; then
+	# BEGIN Create new C enum
+
+	printInfo "Creating new C enum '$className'"
+
+	# Set c-enum-source.tpl location and make it executable
+	cEnumSourceTpl=$(isExecutable "$SCRIPT_DIR/template/c-enum-source.tpl")
+
+	# Execute template script
+	"$cEnumSourceTpl" "$className"
+
+	# END Create new C enum
+elif [ "$command" == 'timestamp' ]; then
+
+	# Proper timestamp for a changelog entry
+	$EXEC_DATE +"%a, %d %b %Y %T %z"
+
+fi
+
+exit 0

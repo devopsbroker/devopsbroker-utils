@@ -1,0 +1,686 @@
+#!/bin/bash
+
+#
+# sshbroker - DevOpsBroker utility for creating and managing SSH keys
+#
+# Copyright (C) 2018-2019 Edward Smith <edwardsmith@devopsbroker.org>
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# -----------------------------------------------------------------------------
+# Developed on Ubuntu 16.04.4 LTS running kernel.osrelease = 4.13.0-43
+#
+# Create and manage SSH keys.
+#
+# Some of the best practices for creating and using SSH keys include:
+#   o Use one key per realm and per workstation --> 4 servers accessed from 2
+#     workstations equals 8 private keys
+#   o Use one key for a group of related servers (i.e. web/application/database)
+#     and per workstation --> 3 servers accessed from 2 workstations equals 2
+#     private keys
+#
+# Regardless, the following rules should always be followed:
+#   o Use a long random passphrase when creating SSH keys to encrypt and
+#     protect the private key
+#   o Never copy a private key from one workstation to another, even if it is
+#     protected with a passphrase
+#   o If one workstation is compromised, revoke all those keys
+#
+# -----------------------------------------------------------------------------
+#
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Preprocessing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Load /etc/devops/ansi.conf if ANSI_CONFIG is unset
+if [ -z "$ANSI_CONFIG" ] && [ -f /etc/devops/ansi.conf ]; then
+	source /etc/devops/ansi.conf
+fi
+
+${ANSI_CONFIG?"[1;91mCannot load '/etc/devops/ansi.conf': No such file[0m"}
+
+# Load /etc/devops/exec.conf if EXEC_CONFIG is unset
+if [ -z "$EXEC_CONFIG" ] && [ -f /etc/devops/exec.conf ]; then
+	source /etc/devops/exec.conf
+fi
+
+${EXEC_CONFIG?"[1;91mCannot load '/etc/devops/exec.conf': No such file[0m"}
+
+# Load /etc/devops/functions.conf if FUNC_CONFIG is unset
+if [ -z "$FUNC_CONFIG" ] && [ -f /etc/devops/functions.conf ]; then
+	source /etc/devops/functions.conf
+fi
+
+${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m"}
+
+# Load /etc/devops/functions-io.conf if FUNC_IO_CONFIG is unset
+if [ -z "$FUNC_IO_CONFIG" ] && [ -f /etc/devops/functions-io.conf ]; then
+	source /etc/devops/functions-io.conf
+fi
+
+${FUNC_IO_CONFIG?"[1;91mCannot load '/etc/devops/functions-io.conf': No such file[0m"}
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Robustness ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+set -o errexit                 # Exit if any statement returns a non-true value
+set -o nounset                 # Exit if use an uninitialised variable
+set -o pipefail                # Exit if any statement in a pipeline returns a non-true value
+IFS=$'\n\t'                    # Default the Internal Field Separator to newline and tab
+
+scriptName='sshbroker'
+
+################################## Functions ##################################
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:	findPrivateKey
+# Description: Finds which private SSH key the user is interested in
+# -----------------------------------------------------------------------------
+function findPrivateKey() {
+	local privateKeyList=()
+
+	for file in $HOME/.ssh/*.pub; do
+		# Remove .pub from filename
+		file=${file%????}
+
+		# Add filename to privateKeyList
+		privateKeyList+=( "$file" )
+	done
+
+	if [ ${#privateKeyList[@]} -gt 1 ]; then
+		echo ${bold}'Which private SSH key do you want to work with?'${reset}
+		select privateKey in "${privateKeyList[@]}"; do
+			break;
+		done
+	else
+		privateKey="${privateKeyList[0]}"
+	fi
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:	findPublicKey
+# Description: Finds which public SSH key the user is interested in
+# -----------------------------------------------------------------------------
+function findPublicKey() {
+	local publicKeyList=()
+
+	for file in $HOME/.ssh/*.pub; do
+		# Add filename to publicKeyList
+		publicKeyList+=( "$file" )
+	done
+
+	if [ ${#publicKeyList[@]} -gt 1 ]; then
+		echo ${bold}'Which public SSH key do you want to work with?'${reset}
+		select publicKey in "${publicKeyList[@]}"; do
+			break;
+		done
+	else
+		publicKey="${publicKeyList[0]}"
+	fi
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     showHelp
+# Description:  Displays help message to the user
+# -----------------------------------------------------------------------------
+function showHelp() {
+	# BEGIN showHelp function
+
+	if [ -z "$command" ]; then
+		printUsage "$scriptName COMMAND ${gold}[OPTION...]"
+		echo
+		printUsage 'false' "$scriptName clip"
+		printUsage 'false' "$scriptName connect username@remote_server ${gold}PORT"
+		printUsage 'false' "$scriptName copy username@remote_server ${gold}PORT"
+		printUsage 'false' "$scriptName download username@remote_server:REMOTE_FILE LOCAL_DIR"
+		printUsage 'false' "$scriptName edit { gcloud }"
+		printUsage 'false' "$scriptName fingerprint"
+		printUsage 'false' "$scriptName generate { dsa | ecdsa | ed25519 | rsa } ${gold}BITS"
+		printUsage 'false' "$scriptName list"
+		printUsage 'false' "$scriptName passphrase"
+		printUsage 'false' "$scriptName removehost SSH_HOST"
+		printUsage 'false' "$scriptName test"
+		printUsage 'false' "$scriptName upload { FILE | DIR } username@remote_server:REMOTE_DIR"
+		echo
+	elif [ "$command" == 'clip' ]; then
+		printUsage "$scriptName $command"
+		echo ${romantic}
+		echo 'Clips a public SSH key to the X11 clipboard'${reset}
+	elif [ "$command" == 'connect' ]; then
+		printUsage "$scriptName $command username@remote_server ${gold}PORT"
+		echo ${romantic}
+		echo 'Connects to the remote machine username@remote_server'${reset}
+	elif [ "$command" == 'copy' ]; then
+		printUsage "$scriptName $command username@remote_server ${gold}PORT"
+		echo ${romantic}
+		echo 'Copies a public SSH key to username@remote_server'${reset}
+	elif [ "$command" == 'download' ]; then
+		printUsage "$scriptName $command username@remote_server:REMOTE_FILE LOCAL_DIR"
+		echo ${romantic}
+		echo 'Downloads a remote file to the local machine'${reset}
+	elif [ "$command" == 'edit' ]; then
+		printUsage "$scriptName $command { gcloud }"
+		echo ${romantic}
+		echo 'Edits the SSH configuration for the specified cloud provider'${reset}
+	elif [ "$command" == 'fingerprint' ]; then
+		printUsage "$scriptName $command"
+		echo ${romantic}
+		echo 'Displays the fingerprint of a public SSH key'${reset}
+	elif [ "$command" == 'generate' ]; then
+		printUsage "$scriptName $command { dsa | ecdsa | ed25519 | rsa } ${gold}BITS"
+		echo ${romantic}
+		echo "Generates a new SSH key pair in the $HOME/.ssh directory"${reset}
+	elif [ "$command" == 'list' ]; then
+		printUsage "$scriptName $command"
+		echo ${romantic}
+		echo "Lists all public SSH keys in the $HOME/.ssh directory"${reset}
+	elif [ "$command" == 'passphrase' ]; then
+		printUsage "$scriptName $command"
+		echo ${romantic}
+		echo 'Change the passphrase of an existing private SSH key'${reset}
+	elif [ "$command" == 'removehost' ]; then
+		printUsage "$scriptName $command SSH_HOST"
+		echo ${romantic}
+		echo 'Removes an SSH host from the known_hosts file'${reset}
+	elif [ "$command" == 'test' ]; then
+		printUsage "$scriptName $command"
+		echo ${romantic}
+		echo 'Checks the validity of the sshd configuration file and sanity of the keys'${reset}
+	elif [ "$command" == 'upload' ]; then
+		printUsage "$scriptName $command { FILE | DIR } username@remote_server:REMOTE_DIR"
+		echo ${romantic}
+		echo 'Uploads either a file or entire directory to the specified directory on the remote server'${reset}
+	fi
+
+	# END showHelp function
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     validateConnect
+# Description:  Performs validation for the connect and copy commands
+#
+# Parameters:
+#   userHost    The userhost value to validate
+#   sshPort     The SSH port value to validate
+# -----------------------------------------------------------------------------
+function validateConnect() {
+	# Display error if userhost parameter is missing
+	if [ -z "$userHost" ]; then
+		printError $scriptName 'Missing username@remote_server parameter'
+		echo
+		printUsage "$scriptName $command username@remote_server"
+
+		exit 1
+	fi
+
+	if [ "$sshPort" ]; then
+		# Display error if SSH port parameter is invalid
+		if [[ ! "$sshPort" =~ ^[0-9]+$ ]]; then
+			printError $scriptName "Invalid SSH port: '$sshPort'"
+			echo
+			printUsage "$scriptName $command $userHost PORT"
+
+			exit 1
+		fi
+
+		if [ $sshPort -gt 65535 ]; then
+			printError $scriptName "Invalid SSH port: '$sshPort'"
+			echo
+			printUsage "$scriptName $command $userHost PORT"
+
+			exit 1
+		fi
+	fi
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     validateDownload
+# Description:  Performs validation for the download command
+#
+# Parameters:
+#   remoteFile  The source remote file or directory to download
+#   localDir    The local destination directory
+# -----------------------------------------------------------------------------
+function validateDownload() {
+	# Display error if remoteFile parameter is missing
+	if [ -z "$remoteFile" ]; then
+		printError $scriptName 'Missing remote file parameter'
+		echo
+		printUsage "$scriptName $command username@remote_server:REMOTE_FILE LOCAL_DIR"
+
+		exit 1
+	fi
+
+	errorMessage=$(isValidDirectory $scriptName "$localDir")
+
+	# Display error if localDir parameter is invalid
+	if [ "$errorMessage" != '0' ]; then
+		echo "$errorMessage"
+		echo
+		printUsage "$scriptName $command $remoteFile LOCAL_DIR"
+
+		exit 1
+	fi
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     validateEdit
+# Description:  Performs validation for the edit command
+#
+# Parameters:
+#   cloudHost   The cloud host name to validate
+# -----------------------------------------------------------------------------
+function validateEdit() {
+	# Display error if cloud host parameter is missing
+	if [ -z "$cloudHost" ]; then
+		printError $scriptName 'Missing cloud host parameter'
+		echo
+		printUsage "$scriptName $command { gcloud }"
+
+		exit 1
+	fi
+
+	# Display error if cloud host parameter is invalid
+	if [[ ! "$cloudHost" =~ ^(gcloud)$ ]]; then
+		printError $scriptName "Invalid cloud host: '$cloudHost'"
+		echo
+		printUsage "$scriptName $command { gcloud }"
+
+		exit 1
+	fi
+
+	# Display error if gcloud utility is not in user's bin directory
+	if [ ! -L "$HOME/bin/gcloud" ]; then
+		printError $scriptName "Missing gcloud symlink: '$HOME/bin/gcloud'"
+		exit 1
+	fi
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     validateGenerate
+# Description:  Performs validation for the generate command
+#
+# Parameters:
+#   keyType     The type of SSH key to generate
+#   numBits     The number of bits to use for the SSH key
+# -----------------------------------------------------------------------------
+function validateGenerate() {
+	# Display error if SSH key type parameter is missing
+	if [ -z "$keyType" ]; then
+		printError $scriptName 'Missing SSH key type parameter'
+		echo
+		printUsage "$scriptName $command { dsa | ecdsa | ed25519 | rsa } ${gold}BITS"
+
+		exit 1
+	fi
+
+	# Display error if SSH key type parameter is invalid
+	if [[ ! "$keyType" =~ ^(dsa|ecdsa|ed25519|rsa)$ ]]; then
+		printError $scriptName "Invalid SSH key type: '$keyType'"
+		echo
+		printUsage "$scriptName $command { dsa | ecdsa | ed25519 | rsa } ${gold}BITS"
+
+		exit 1
+	fi
+
+	if [ "$numBits" ]; then
+		# Display error if number of bits parameter is invalid
+		if [[ ! "$numBits" =~ ^[0-9]+$ ]]; then
+			printError $scriptName "Invalid number of bits: '$numBits'"
+			echo
+			printUsage "$scriptName $command $keyType BITS"
+
+			exit 1
+		fi
+
+		if [ $keyType == 'dsa' ]; then
+			# Display error if key type is DSA and number of bits parameter is invalid
+			if [ $numBits -ne 1024 ]; then
+				printError $scriptName "Invalid number of bits: '$numBits'"
+				echo
+				printUsage "$scriptName $command $keyType { 1024 }"
+
+				exit 1
+			fi
+		elif [ $keyType == 'ecdsa' ]; then
+			# Display error if key type is ECDSA and number of bits parameter is invalid
+			if [ $numBits -ne 256 ] && [ $numBits -ne 384 ] && [ $numBits -ne 521 ]; then
+				printError $scriptName "Invalid number of bits: '$numBits'"
+				echo
+				printUsage "$scriptName $command $keyType { 256 | 384 | 521 }"
+
+				exit 1
+			fi
+		elif [ $keyType == 'rsa' ]; then
+			# Display error if key type is RSA and number of bits parameter is invalid
+			if [ $numBits -lt 1024 ]; then
+				printError $scriptName "Invalid number of bits: '$numBits'"
+				echo
+				printUsage "$scriptName $command $keyType { >= 1024 }"
+
+				exit 1
+			fi
+		fi
+	fi
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     validateRemoveHost
+# Description:  Performs validation for the removehost command
+#
+# Parameters:
+#   sshHost     The SSH host to remove from the known_hosts file
+# -----------------------------------------------------------------------------
+function validateRemoveHost() {
+	# Display error if sshHost parameter is missing
+	if [ -z "$sshHost" ]; then
+		printError $scriptName 'Missing SSH host parameter'
+		echo
+		printUsage "$scriptName $command SSH_HOST"
+
+		exit 1
+	fi
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     validateUpload
+# Description:  Performs validation for the upload command
+#
+# Parameters:
+#   fileOrDir   The file or directory to upload
+#   remoteDir   The destination remote directory
+# -----------------------------------------------------------------------------
+function validateUpload() {
+	# Display error if fileOrDir parameter is missing
+	if [ -z "$fileOrDir" ]; then
+		printError $scriptName 'Missing { FILE | DIR } parameter'
+		echo
+		printUsage "$scriptName $command { FILE | DIR } username@remote_server:REMOTE_DIR"
+
+		exit 1
+	fi
+
+	# Display error if fileOrDir parameter is invalid
+	if [ ! -f "$fileOrDir" ] && [ ! -d "$fileOrDir" ]; then
+		printError $scriptName "Invalid { FILE | DIR }: '$fileOrDir'"
+		echo
+		printUsage "$scriptName $command { FILE | DIR } username@remote_server:REMOTE_DIR"
+
+		exit 1
+	fi
+
+	# Display error if remoteDir parameter is missing
+	if [ -z "$remoteDir" ]; then
+		printError $scriptName 'Missing remote directory parameter'
+		echo
+		printUsage "$scriptName $command $fileOrDir username@remote_server:REMOTE_DIR"
+
+		exit 1
+	fi
+}
+
+################################## Variables ##################################
+
+## Bash exec variables
+EXEC_BETWEEN=/usr/local/bin/between
+EXEC_GCLOUD="$HOME/bin/gcloud"
+EXEC_HOSTNAME=/bin/hostname
+EXEC_SCP=/usr/bin/scp
+EXEC_SSH=/usr/bin/ssh
+EXEC_SSHD=/usr/sbin/sshd
+EXEC_TRIM=/usr/local/bin/trim
+EXEC_TRUNCATE=/usr/bin/truncate
+EXEC_XCLIP=/usr/bin/xclip
+
+SSH_COPY_ID=/usr/bin/ssh-copy-id
+SSH_KEYGEN=/usr/bin/ssh-keygen
+
+## Options
+command=${1:-}
+
+## Variables
+export TMPDIR=${TMPDIR:-'/tmp'}
+showCommandHelp=false
+sshDir="$HOME/.ssh"
+username=$USER
+
+sudoCommands=('test')
+validCommands=('clip' 'connect' 'copy' 'download' 'edit' 'fingerprint' 'generate' 'list' 'passphrase' 'removehost' 'upload')
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Display usage if no parameters given
+if [ -z "$command" ]; then
+	printUsage "$scriptName ${gold}[help]${yellow} COMMAND ${gold}[OPTION...]"
+	exit 1
+fi
+
+if [ "$command" == 'help' ]; then
+	showCommandHelp=true
+	command=${2:-}
+fi
+
+if [ $command ]; then
+	if [ "$(containsElement "$command" "${sudoCommands[@]}")" == '0' ]; then
+		# Display error if not running as root
+		if [ "$USER" != 'root' ]; then
+			printError $scriptName 'Permission denied (you must be root)'
+			exit 1
+		fi
+	else
+		# Display error if invalid command
+		if [ $(containsElement "$command" "${validCommands[@]}") != '0' ]; then
+			printError $scriptName "Invalid command: '$command'"
+			echo
+			printUsage "$scriptName ${gold}[help]${yellow} COMMAND ${gold}[OPTION...]"
+
+			exit 1
+		fi
+
+		# Display error if running as root
+		if [ "$USER" == 'root' ]; then
+			printError $scriptName 'Permission denied (you cannot be root)'
+			exit 1
+		fi
+	fi
+fi
+
+if [ "$showCommandHelp" == 'true' ]; then
+	showHelp
+	exit 0
+fi
+
+################################### Actions ###################################
+
+# Make SSH directory (if necessary)
+if [ ! -d "$sshDir" ]; then
+	$EXEC_MKDIR --parents --mode=0700 "$sshDir"
+fi
+
+# Make directory to enable SSH multiplexing (if necessary)
+if [ ! -d "$sshDir/multiplex" ]; then
+	$EXEC_MKDIR --parents --mode=0700 "$sshDir/multiplex"
+fi
+
+if [ $command == 'clip' ]; then
+	# Find the public key the user wants to clip
+	findPublicKey
+
+	printInfo "Copying $publicKey to the clipboard"
+	echo
+
+	$EXEC_XCLIP -selection clipboard < "$publicKey"
+
+elif [ $command == 'connect' ]; then
+	userHost=${2:-}
+	sshPort=${3:-}
+	validateConnect
+
+	# Find the private key the user wants to use to connect
+	findPrivateKey
+
+	if [ -z "$sshPort" ]; then
+		$EXEC_SSH -i "$privateKey" "$userHost"
+	else
+		$EXEC_SSH -i "$privateKey" -p $sshPort "$userHost"
+	fi
+
+elif [ $command == 'copy' ]; then
+	userHost=${2:-}
+	sshPort=${3:-}
+	validateConnect
+
+	# Find the public key the user wants to copy to the remote server
+	findPublicKey
+
+	printInfo "Copying $publicKey to $userHost"
+	echo
+
+	if [ -z "$sshPort" ]; then
+		$SSH_COPY_ID -i "$publicKey" "$userHost"
+	else
+		$SSH_COPY_ID -i "$publicKey" -p $sshPort "$userHost"
+	fi
+
+elif [ $command == 'download' ]; then
+	remoteFile=${2:-}
+	localDir=${3:-'./'}
+	validateDownload
+
+	# Find the private key the user wants to use to upload
+	findPrivateKey
+
+	$EXEC_SCP -i "$privateKey" -p "$remoteFile" "$localDir"
+
+elif [ $command == 'edit' ]; then
+	cloudHost=${2:-}
+	validateEdit
+
+	if [ $cloudHost == 'gcloud' ]; then
+		GCLOUD_ACCT="$($EXEC_GCLOUD config get-value account)"
+
+		# Procure the Google Cloud account
+		read -p "${bold}${green}What is the Google Cloud account name?: ${reset}" -i "$GCLOUD_ACCT" -e GCLOUD_ACCT
+
+		# Find the public key the user wants to manage
+		findPublicKey
+
+		# Parse the Google Cloud account name for the username
+		IFS='@'; read -ra username <<< "$GCLOUD_ACCT"; IFS=$'\n\t'
+
+		printInfo 'Retrieving current project-wide public SSH keys'
+		publicSSHKeyList=( $($EXEC_GCLOUD compute project-info describe | $EXEC_BETWEEN "key: ssh-keys" "kind:") )
+
+		if [ "$publicSSHKeyList" ]; then
+			unset publicSSHKeyList[0]
+
+			# Create and/or truncate temporary file
+			$EXEC_TRUNCATE --size=0 "$TMPDIR/gcloud-ssh-keys.tmp"
+
+			# Add existing public SSH keys to temporary file
+			for publicSSHKey in "${publicSSHKeyList[@]}"; do
+				echo $($EXEC_TRIM "$publicSSHKey") >> "$TMPDIR/gcloud-ssh-keys.tmp"
+			done
+
+			# Add personal public SSH key to temporary file
+			IFS=' '; publicSSHKey=( $($EXEC_CAT $publicKey) ); IFS=$'\n\t'
+			publicSSHKey[0]="${username[0]}:${publicSSHKey[0]}"
+			publicSSHKey[2]="${username[0]}"
+
+			echo "${publicSSHKey[@]}" >> "$TMPDIR/gcloud-ssh-keys.tmp"
+			echo ${bold}
+			echo "Directions on updating public SSH keys for Google Cloud Platform:"
+			echo "  1. Edit the '${green}$TMPDIR/gcloud-ssh-keys.tmp${white}' file"
+			echo "  2. Execute '${green}gcloud compute project-info add-metadata --metadata-from-file ssh-keys=$TMPDIR/gcloud-ssh-keys.tmp${white}'"
+		fi
+	fi
+
+elif [ $command == 'fingerprint' ]; then
+
+	# Find the public key the user wants to fingerprint
+	findPublicKey
+
+	$SSH_KEYGEN -lvf "$publicKey"
+
+elif [ $command == 'generate' ]; then
+	keyType=${2:-}
+	numBits=${3:-}
+	validateGenerate
+
+	printBanner 'Generating SSH Keys'
+	hostName=$($EXEC_HOSTNAME)
+
+	echo ${bold}${yellow}'NOTE: It is highly recommended to use a long random passphrase'
+	echo ${white}
+
+	# Procure the email address to use for the SSH key comment
+	emailAddress="$username@$hostName"
+	read -p "${bold}${green}What comment do you want to use for the SSH key?: ${reset}" -i "$emailAddress" -e emailAddress
+
+	# Procure the SSH key filename
+	sshKeyName="$username-$hostName-id_$keyType"
+	read -p "${bold}${green}What filename do you want to use for the SSH key?: ${reset}" -i "$sshKeyName" -e sshKeyName
+
+	# Generate SSH key
+	if [ -z "$numBits" ]; then
+		$SSH_KEYGEN -t $keyType -C $emailAddress -f "$sshDir/$sshKeyName"
+	else
+		$SSH_KEYGEN -t $keyType -b $numBits -C $emailAddress -f "$sshDir/$sshKeyName"
+	fi
+
+elif [ $command == 'list' ]; then
+
+	printBanner 'Listing Public SSH Keys'
+
+	$EXEC_FIND "$sshDir" -maxdepth 1 -type f -name "*.pub"
+
+	echo
+
+elif [ $command == 'passphrase' ]; then
+
+	# Find the private key the user wants to change the passphrase
+	findPrivateKey
+
+	printBanner 'Changing Private SSH Key Passphrase'
+
+	printInfo "Private SSH Key: $privateKey"
+	echo
+
+	# Change the private SSH key passphrase
+	$SSH_KEYGEN -f "$privateKey" -p
+
+elif [ $command == 'removehost' ]; then
+	sshHost=${2:-}
+	validateRemoveHost
+
+	$SSH_KEYGEN -f "$sshDir/known_hosts" -R "$sshHost"
+
+elif [ $command == 'test' ]; then
+
+	$EXEC_SSHD -t
+
+elif [ $command == 'upload' ]; then
+	fileOrDir=${2:-}
+	remoteDir=${3:-}
+	validateUpload
+
+	# Find the private key the user wants to use to upload
+	findPrivateKey
+
+	if [ -f "$fileOrDir" ]; then
+		$EXEC_SCP -i "$privateKey" -p "$fileOrDir" "$remoteDir"
+	else
+		$EXEC_SCP -i "$privateKey" -pr "$fileOrDir" "$remoteDir"
+	fi
+fi
+
+exit 0

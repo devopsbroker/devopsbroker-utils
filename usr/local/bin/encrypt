@@ -1,0 +1,103 @@
+#!/bin/bash
+
+#
+# encrypt - DevOpsBroker utility for encrypting files with a symmetric cipher
+#
+# Copyright (C) 2018 Edward Smith <edwardsmith@devopsbroker.org>
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# -----------------------------------------------------------------------------
+# Developed on Ubuntu 16.04.4 LTS running kernel.osrelease = 4.13.0-43
+#
+# Encrypt files and directories using gpg and a password.
+#
+# Parameters:
+#   $1: The name of the file or directory to encrypt
+# -----------------------------------------------------------------------------
+#
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Preprocessing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Load /etc/devops/ansi.conf if ANSI_CONFIG is unset
+if [ -z "$ANSI_CONFIG" ] && [ -f /etc/devops/ansi.conf ]; then
+	source /etc/devops/ansi.conf
+fi
+
+${ANSI_CONFIG?"[1;91mCannot load '/etc/devops/ansi.conf': No such file[0m"}
+
+# Load /etc/devops/exec.conf if EXEC_CONFIG is unset
+if [ -z "$EXEC_CONFIG" ] && [ -f /etc/devops/exec.conf ]; then
+	source /etc/devops/exec.conf
+fi
+
+${EXEC_CONFIG?"[1;91mCannot load '/etc/devops/exec.conf': No such file[0m"}
+
+# Load /etc/devops/functions.conf if FUNC_CONFIG is unset
+if [ -z "$FUNC_CONFIG" ] && [ -f /etc/devops/functions.conf ]; then
+	source /etc/devops/functions.conf
+fi
+
+${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m"}
+
+################################## Variables ##################################
+
+## Bash exec variables
+EXEC_SHRED=/usr/bin/shred
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Display usage if no parameters given
+if [ -z "$1" ]; then
+  printUsage 'encrypt FILE|DIR'
+  echo
+
+  exit 1
+fi
+
+# Display error and usage if target not valid file or directory
+if [ ! -f "$1" ] && [ ! -d "$1" ]; then
+  printError 'encrypt' "Cannot access '$1': No such file or directory"
+  echo
+  printUsage 'encrypt FILE|DIR'
+
+  exit 1
+fi
+
+################################### Actions ###################################
+
+if [ -d "$1" ]; then
+
+  # Create directory.tar.gz file
+  filename="$1.tar.gz"
+
+  $EXEC_TAR -zcf "$filename" "$1"
+
+  # Encrypt the tarball
+  $EXEC_GPG --symmetric -z 0 "$filename" 2>/dev/null
+
+  # Shred the tarball if gpg succeeded
+  if [ -f "$filename.gpg" ]; then
+    $EXEC_SHRED -uzn 0 "$filename"
+  fi
+
+else
+
+  filename="$1"
+
+  $EXEC_GPG --symmetric "$filename" 2>/dev/null
+
+fi
+
+exit 0

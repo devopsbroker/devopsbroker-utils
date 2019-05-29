@@ -1,0 +1,112 @@
+#!/bin/bash
+
+#
+# hypotenuse - DevOpsBroker utility for calculating the hypotenuse of a right
+#	       triangle
+#
+# Copyright (C) 2018 Edward Smith <edwardsmith@devopsbroker.org>
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# -----------------------------------------------------------------------------
+# Developed on Ubuntu 16.04.4 LTS running kernel.osrelease = 4.13.0-43
+#
+# Use good ol' c² = a² + b² to calculate the hypotenuse of a right triangle.
+#
+# Parameters:
+#   $1: Length of right triangle
+#   $2: Width of right triangle
+#   $3: Scale of the result (optional)
+# -----------------------------------------------------------------------------
+#
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Preprocessing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Load /etc/devops/ansi.conf if ANSI_CONFIG is unset
+if [ -z "$ANSI_CONFIG" ] && [ -f /etc/devops/ansi.conf ]; then
+	source /etc/devops/ansi.conf
+fi
+
+${ANSI_CONFIG?"[1;91mCannot load '/etc/devops/ansi.conf': No such file[0m"}
+
+# Load /etc/devops/exec.conf if EXEC_CONFIG is unset
+if [ -z "$EXEC_CONFIG" ] && [ -f /etc/devops/exec.conf ]; then
+	source /etc/devops/exec.conf
+fi
+
+${EXEC_CONFIG?"[1;91mCannot load '/etc/devops/exec.conf': No such file[0m"}
+
+# Load /etc/devops/functions.conf if FUNC_CONFIG is unset
+if [ -z "$FUNC_CONFIG" ] && [ -f /etc/devops/functions.conf ]; then
+	source /etc/devops/functions.conf
+fi
+
+${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m"}
+
+################################## Variables ##################################
+
+## Bash exec variables
+EXEC_BC=/usr/bin/bc
+
+## Options
+length="$1"
+width="$2"
+scale="$3"
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Display usage if no parameters given
+if [ -z "$length" ] || [ -z "$width" ]; then
+  printUsage "hypotenuse LENGTH WIDTH ${gold}[SCALE]"
+  echo
+
+  exit 1
+fi
+
+# Display error if parameter is not a valid length
+if [[ ! "$length" =~ ^[0-9]+$ ]]; then
+  printError 'hypotenuse' "Invalid length: $length"
+  echo
+  printUsage "hypotenuse LENGTH WIDTH ${gold}[SCALE]"
+
+  exit 1
+fi
+
+# Display error if parameter is not a valid width
+if [[ ! "$width" =~ ^[0-9]+$ ]]; then
+  printError 'hypotenuse' "Invalid width: $width"
+  echo
+  printUsage "hypotenuse $length WIDTH ${gold}[SCALE]"
+
+  exit 1
+fi
+
+if [ -z "$3" ]; then
+  scale=2;
+else
+  # Display error if parameter is not a valid scale
+  if [[ ! "$scale" =~ ^[0-9]+$ ]]; then
+    printError 'hypotenuse' "Invalid scale: $scale"
+    echo
+    printUsage "hypotenuse $length $width SCALE"
+
+    exit 1
+  fi
+fi
+
+################################### Actions ###################################
+
+echo "scale=$scale; sqrt(($length^2)+($width^2))" | $EXEC_BC
+
+exit 0

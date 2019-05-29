@@ -1,0 +1,641 @@
+#!/bin/bash
+
+#
+# bridgebroker - DevOpsBroker administrative tool for managing network bridge devices
+#
+# Copyright (C) 2019 Edward Smith <edwardsmith@devopsbroker.org>
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# -----------------------------------------------------------------------------
+# Developed on Ubuntu 18.04.2 LTS running kernel.osrelease = 4.18.0-15
+#
+# -----------------------------------------------------------------------------
+#
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Preprocessing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Load /etc/devops/ansi.conf if ANSI_CONFIG is unset
+if [ -z "$ANSI_CONFIG" ] && [ -f /etc/devops/ansi.conf ]; then
+	source /etc/devops/ansi.conf
+fi
+
+${ANSI_CONFIG?"[1;91mCannot load '/etc/devops/ansi.conf': No such file[0m"}
+
+# Load /etc/devops/exec.conf if EXEC_CONFIG is unset
+if [ -z "$EXEC_CONFIG" ] && [ -f /etc/devops/exec.conf ]; then
+	source /etc/devops/exec.conf
+fi
+
+${EXEC_CONFIG?"[1;91mCannot load '/etc/devops/exec.conf': No such file[0m"}
+
+# Load /etc/devops/functions.conf if FUNC_CONFIG is unset
+if [ -z "$FUNC_CONFIG" ] && [ -f /etc/devops/functions.conf ]; then
+	source /etc/devops/functions.conf
+fi
+
+${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m"}
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Robustness ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+set -o errexit                 # Exit if any statement returns a non-true value
+set -o nounset                 # Exit if use an uninitialised variable
+set -o pipefail                # Exit if any statement in a pipeline returns a non-true value
+IFS=$'\n\t'                    # Default the Internal Field Separator to newline and tab
+
+scriptName='bridgebroker'
+
+# Display error if not running as root
+if [ "$USER" != 'root' ]; then
+	printError $scriptName 'Permission denied (you must be root)'
+	exit 1
+fi
+
+################################## Functions ##################################
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     getConnectionInfo
+# Description:  Retrieves the NetworkManager connection UUID for the given device
+#
+# Parameters:
+#   $1      The name of the device
+# Returns:  The NetworkManager connection information for the device ($connInfo)
+# -----------------------------------------------------------------------------
+function getConnectionInfo() {
+	local deviceName="$1"
+	local IFS=' '
+
+	connInfo=( $($EXEC_NMCLI connection show | $EXEC_GREP "$deviceName[[:blank:]]*$" || true) )
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     getGroupID
+# Description:  Retrieves the GID of the given group name
+#
+# Parameters:
+#   $1      The name of the group
+# Returns:  The group ID
+# -----------------------------------------------------------------------------
+function getGroupID() {
+	echo "$($EXEC_GETENT group $1 | $EXEC_CUT -d: -f3)"
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     getLinkInfo
+# Description:  Retrieves the ip link information for the given device
+#
+# Parameters:
+#   $1      The name of the device
+# Returns:  The ip link information for the given device
+# -----------------------------------------------------------------------------
+function getLinkInfo() {
+	echo "$($EXEC_IP -o link show $1 2>/dev/null)"
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     validateBridgeName
+# Description:  Performs validation for the BRIDGE_NAME parameter
+#
+# Parameters:
+#   bridgeName  The name of the bridge interface
+#   $1          The usage message to use if there is an error
+# -----------------------------------------------------------------------------
+function validateBridgeName() {
+	# Display error if bridge interface parameter is missing
+	if [ -z "$bridgeName" ]; then
+		printError $scriptName 'Missing bridge interface parameter'
+		echo
+		printUsage "$1"
+
+		exit 1
+	fi
+
+	if [ -f $EXEC_NMCLI ]; then
+		connInfo="$($EXEC_NMCLI --terse --fields connection.type connection show $bridgeName 2>/dev/null || true)"
+
+		# Display error if bridge interface parameter is invalid
+		if [ -z "$connInfo" ]; then
+			printError $scriptName "Cannot access '$bridgeName': No such bridge interface"
+			echo
+			printUsage "$1"
+
+			exit 1
+		fi
+
+		# Display error if bridge interface parameter is not a bridge
+		if [[ ! "$connInfo" =~ bridge$ ]]; then
+			printError $scriptName "Invalid parameter '$bridgeName': Not a bridge interface"
+			echo
+			printUsage "$1"
+
+			exit 1
+		fi
+	else
+		# Display error if bridge interface parameter is invalid
+		if [ ! -L /sys/class/net/$bridgeName ]; then
+			printError $scriptName "Cannot access '$bridgeName': No such bridge interface"
+			echo
+			printUsage "$1"
+
+			exit 1
+		fi
+
+		# Display error if bridge interface parameter is not a bridge
+		if [ -z "$($EXEC_IP link show type bridge dev $bridgeName)" ]; then
+			printError $scriptName "Invalid parameter '$bridgeName': Not a bridge interface"
+			echo
+			printUsage "$1"
+
+			exit 1
+		fi
+	fi
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     validateAdd
+# Description:  Performs validation for the add command
+# -----------------------------------------------------------------------------
+function validateAdd() {
+	# Display error if interface type parameter is missing
+	if [ -z "$interfaceType" ]; then
+		printError $scriptName 'Missing interface type parameter'
+		echo
+		printUsage "$scriptName $command { link | tap } LINK_NAME BRIDGE_NAME"
+
+		exit 1
+	fi
+
+	# Display error if interface type parameter is invalid
+	if [[ ! "$interfaceType" =~ ^(link|tap)$ ]]; then
+		printError $scriptName "Invalid interface type: '$interfaceType'"
+		echo
+		printUsage "$scriptName $command { link | tap } LINK_NAME BRIDGE_NAME"
+
+		exit 1
+	fi
+
+	# Display error if network interface parameter is missing
+	if [ -z "$linkName" ]; then
+		printError $scriptName 'Missing network interface parameter'
+		echo
+		printUsage "$scriptName $command $interfaceType LINK_NAME BRIDGE_NAME"
+
+		exit 1
+	fi
+
+	if [ $interfaceType == 'link' ]; then
+		local linkInfo=''
+
+		# Display error if network interface parameter is invalid
+		if [ ! -L /sys/class/net/$linkName ]; then
+			printError $scriptName "Cannot access '$linkName': No such network interface"
+			echo
+			printUsage "$scriptName $command $interfaceType LINK_NAME BRIDGE_NAME"
+
+			exit 1
+		fi
+
+		if [ -f $EXEC_NMCLI ]; then
+			linkInfo="$($EXEC_NMCLI connection show | $EXEC_GREP -c ^bridge-slave-$linkName || true)"
+
+			# Display notice if network interface parameter is already part of a bridge
+			if [ $linkInfo -gt 0 ]; then
+				printNotice $scriptName "Network interface '$linkName' is already part of a bridge interface"
+				exit 0
+			fi
+		else
+			linkInfo="$(getLinkInfo $linkName)"
+
+			# Display notice if network interface parameter is already part of a bridge
+			if [[ "$linkInfo" =~ [[:blank:]]master[[:blank:]] ]]; then
+				printNotice $scriptName "Network interface '$bridgeName' is already part of a bridge interface"
+				exit 0
+			fi
+		fi
+	fi
+
+	validateBridgeName "$scriptName $command $interfaceType $linkName BRIDGE_NAME"
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     validateCreate
+# Description:  Performs validation for the create command
+# -----------------------------------------------------------------------------
+function validateCreate() {
+	# Display error if bridge interface parameter is missing
+	if [ -z "$bridgeName" ]; then
+		printError $scriptName 'Missing bridge interface parameter'
+		echo
+		printUsage "$scriptName $command BRIDGE_NAME"
+
+		exit 1
+	fi
+
+	# Display notice if the network interface already exists
+	if [ -L /sys/class/net/$bridgeName ]; then
+		printNotice $scriptName "Network interface '$bridgeName' already exists"
+		exit 0
+	fi
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     validateDelete
+# Description:  Performs validation for the delete command
+# -----------------------------------------------------------------------------
+function validateDelete() {
+	validateBridgeName "$scriptName $command BRIDGE_NAME"
+
+	if [ -f $EXEC_NMCLI ]; then
+		local bridgeSlaveList=( $($EXEC_NMCLI connection show | $EXEC_GREP ^bridge-slave || true) )
+
+		if [ ${#bridgeSlaveList[@]} -gt 0 ]; then
+			local master=''
+
+			for bridgeSlave in "${bridgeSlaveList[@]}"; do
+				IFS=' '; bridgeSlave=( $bridgeSlave ); IFS=$'\n\t'
+
+				master=$($EXEC_NMCLI -f connection.master connection show $bridgeSlave | $EXEC_AWK '{ print $2 }')
+
+				if [ $master == $bridgeName ]; then
+					IFS='-'; local linkName=( $bridgeSlave ); IFS=$'\n\t'
+
+					# Display notice if bridge interface still has slaves
+					printNotice $scriptName "Bridge interface '$bridgeName' still has slave network devices"
+					echo
+					printUsage "$scriptName remove link ${linkName[2]}"
+
+					exit 0
+				fi
+			done
+		fi
+	fi
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     validateRemove
+# Description:  Performs validation for the remove command
+# -----------------------------------------------------------------------------
+function validateRemove() {
+	# Display error if interface type parameter is missing
+	if [ -z "$interfaceType" ]; then
+		printError $scriptName 'Missing interface type parameter'
+		echo
+		printUsage "$scriptName $command { link | tap } LINK_NAME"
+
+		exit 1
+	fi
+
+	# Display error if interface type parameter is invalid
+	if [[ ! "$interfaceType" =~ ^(link|tap)$ ]]; then
+		printError $scriptName "Invalid interface type: '$interfaceType'"
+		echo
+		printUsage "$scriptName $command { link | tap } LINK_NAME"
+
+		exit 1
+	fi
+
+	# Display error if network interface parameter is missing
+	if [ -z "$linkName" ]; then
+		printError $scriptName 'Missing network interface parameter'
+		echo
+		printUsage "$scriptName $command $interfaceType LINK_NAME"
+
+		exit 1
+	fi
+
+	if [ $interfaceType == 'link' ]; then
+		local linkInfo=''
+
+		# Display error if network interface parameter is invalid
+		if [ ! -L /sys/class/net/$linkName ]; then
+			printError $scriptName "Cannot access '$linkName': No such network interface"
+			echo
+			printUsage "$scriptName $command $interfaceType LINK_NAME"
+
+			exit 1
+		fi
+
+		if [ -f $EXEC_NMCLI ]; then
+			linkInfo="$($EXEC_NMCLI connection show | $EXEC_GREP -c ^bridge-slave-$linkName || true)"
+
+			# Display notice if network interface parameter is not part of a bridge
+			if [ $linkInfo -eq 0 ]; then
+				printNotice $scriptName "Network interface '$linkName' is not part of a bridge interface"
+				exit 0
+			fi
+		else
+			linkInfo="$(getLinkInfo $linkName)"
+
+			# Display notice if network interface parameter is not part of a bridge
+			if [[ ! "$linkInfo" =~ [[:blank:]]master[[:blank:]] ]]; then
+				printNotice $scriptName "Network interface '$bridgeName' is not part of a bridge interface"
+				exit 0
+			fi
+		fi
+
+	elif [ $interfaceType == 'tap' ]; then
+		# Display error if network interface parameter is not a tap interface
+		if [ ! -f /sys/class/net/$linkName/tun_flags ] ; then
+			printError $scriptName "Invalid network interface '$linkName': Not a tap interface"
+			echo
+			printUsage "$scriptName $command $interfaceType LINK_NAME"
+
+			exit 1
+		fi
+
+		local tapInfo="$(getLinkInfo $linkName)"
+
+		# Display notice if tap interface is still in use
+		if [[ "$tapInfo" =~ [[:blank:]](state UP)[[:blank:]] ]]; then
+			printNotice $scriptName "Cannot remove tap interface '$linkName': Still in use"
+			exit 0
+		fi
+	fi
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     validateStart
+# Description:  Performs validation for the start command
+# -----------------------------------------------------------------------------
+function validateStart() {
+	# Display notice if NetworkManager is not installed
+	if [ ! -f $EXEC_NMCLI ]; then
+		printNotice $scriptName "Start command is only valid for NetworkManager systems"
+		exit 0
+	fi
+
+	validateBridgeName "$scriptName $command BRIDGE_NAME"
+
+	local bridgeInfo="$(getLinkInfo $bridgeName)"
+
+	# Display notice if bridge interface has already been started
+	if [[ "$bridgeInfo" =~ [[:blank:]](state UP)[[:blank:]] ]]; then
+		printNotice $scriptName "Bridge interface '$bridgeName' has already been started"
+		exit 0
+	fi
+
+	set +o errexit
+	bridgeSlaveList=( $($EXEC_NMCLI connection show | $EXEC_AWK '/^bridge-slave/{ print $1 }') )
+
+	# Display error if no network interfaces have been configured as a bridge slave
+	if [ ${#bridgeSlaveList[@]} -eq 0 ]; then
+		printError $scriptName "Incomplete bridge '$bridgeName': No bridge slaves exist"
+		echo
+		printUsage "$scriptName add link LINK_NAME $bridgeName"
+
+		exit 1
+	fi
+
+	local master=''
+	local hasSlave=false
+	for bridgeSlave in "${bridgeSlaveList[@]}"; do
+		master=$($EXEC_NMCLI -f connection.master connection show $bridgeSlave | $EXEC_AWK '{ print $2 }')
+
+		if [ $master == $bridgeName ]; then
+			hasSlave=true
+			break;
+		fi
+	done
+
+	# Display error if no network interfaces have been configured as a slave for the bridge
+	if [ "$hasSlave" == 'false' ]; then
+		printError $scriptName "Incomplete bridge '$bridgeName': No bridge slaves exist"
+		echo
+		printUsage "$scriptName add link LINK_NAME $bridgeName"
+
+		exit 1
+	fi
+	set -o errexit
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     validateStop
+# Description:  Performs validation for the stop command
+# -----------------------------------------------------------------------------
+function validateStop() {
+	# Display notice if NetworkManager is not installed
+	if [ ! -f $EXEC_NMCLI ]; then
+		printNotice $scriptName "Stop command is only valid for NetworkManager systems"
+		exit 0
+	fi
+
+	validateBridgeName "$scriptName $command BRIDGE_NAME"
+
+	local bridgeInfo="$(getLinkInfo $bridgeName)"
+
+	# Display notice if bridge interface has already been stopped
+	if [ -z "$bridgeInfo" ]; then
+		printNotice $scriptName "Bridge interface '$bridgeName' has already been stopped"
+		exit 0
+	fi
+}
+
+################################## Variables ##################################
+
+## Bash exec variables
+EXEC_DHCLIENT=/sbin/dhclient
+EXEC_NMCLI=/usr/bin/nmcli
+EXEC_SYSCTL=/sbin/sysctl
+
+## Options
+command=${1:-}
+
+## Variables
+sudoCommands=('add' 'create' 'delete' 'exists' 'remove' 'start' 'stop')
+validCommands=(${sudoCommands[@]})
+
+usageMessage="$scriptName { add ${gold}{ link | tap }${yellow} | create | delete | exists | remove ${gold}{ link | tap }${yellow} | start | stop }"
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Display usage if no parameters given
+if [ -z "$command" ]; then
+	printUsage $usageMessage
+	exit 1
+fi
+
+# Display error if invalid command
+if [ $(containsElement "$command" "${validCommands[@]}") != '0' ]; then
+	printError $scriptName "Invalid command: '$command'"
+	echo
+	printUsage $usageMessage
+
+	exit 1
+fi
+
+################################### Actions ###################################
+
+if [ $command == 'add' ]; then
+	interfaceType=${2:-}
+	linkName=${3:-}
+	bridgeName=${4:-}
+	validateAdd
+
+	if [ $interfaceType == 'link' ]; then
+
+		printInfo "Adding network interface '$linkName' to bridge interface '$bridgeName'"
+
+		if [ -f $EXEC_NMCLI ]; then
+			$EXEC_NMCLI connection add type bridge-slave \
+				ifname $linkName master $bridgeName \
+				connection.autoconnect no
+		fi
+	elif [ $interfaceType == 'tap' ]; then
+
+		if [ ! -L /sys/class/net/$linkName ]; then
+			printInfo "Creating tap interface '$linkName'"
+
+			if [ -f $EXEC_NMCLI ]; then
+				$EXEC_NMCLI connection add type tun \
+					ifname $linkName con-name $linkName \
+					connection.slave-type bridge \
+					connection.master $bridgeName \
+					connection.autoconnect no \
+					mode tap group $(getGroupID 'kvm')
+			else
+				$EXEC_IP tuntap add dev $linkName mode tap group kvm
+			fi
+		fi
+
+		printInfo "Adding tap interface '$linkName' to bridge interface '$bridgeName'"
+
+		if [ ! -f $EXEC_NMCLI ]; then
+			$EXEC_IP link set dev $linkName master $bridgeName
+		fi
+
+		# Set the TX queue length on the tap interface
+		$EXEC_IP link set $linkName txqueuelen 64
+	fi
+
+elif [ $command == 'create' ]; then
+	bridgeName=${2:-}
+	validateCreate
+
+	printInfo "Creating bridge interface '$bridgeName'"
+
+	if [ -f $EXEC_NMCLI ]; then
+		$EXEC_NMCLI connection add type bridge \
+			ifname $bridgeName con-name $bridgeName \
+			connection.autoconnect no \
+			connection.autoconnect-slaves 1 \
+			ipv4.dns-priority 100 \
+			ipv4.route-metric 100 \
+			ipv4.ignore-auto-dns yes \
+			ipv6.dns-priority 100 \
+			ipv6.route-metric 100 \
+			ipv6.ignore-auto-dns yes \
+			ipv6.may-fail yes \
+			bridge.forward-delay 4 bridge.stp no
+	else
+		$EXEC_IP link add $bridgeName type bridge forward_delay 4 stp_state 0
+	fi
+
+elif [ $command == 'delete' ]; then
+	bridgeName=${2:-}
+	validateDelete
+
+	if [ -f $EXEC_NMCLI ]; then
+		# 1) Bring down bridge interface
+		printInfo "Bringing down bridge interface '$bridgeName'"
+		$EXEC_NMCLI connection down $bridgeName
+
+		# 2) Remove NetworkManager bridge connection profile
+		printInfo "Removing bridge interface '$bridgeName'"
+		$EXEC_NMCLI connection delete $bridgeName
+	else
+		printInfo "Removing bridge interface '$bridgeName'"
+		$EXEC_IP link delete $bridgeName type bridge
+	fi
+
+elif [ $command == 'exists' ]; then
+	bridgeName=${2:-}
+
+	if [ -f $EXEC_NMCLI ]; then
+		connInfo="$($EXEC_NMCLI --terse --fields connection.type connection show $bridgeName 2>/dev/null || true)"
+
+		if [ -z "$connInfo" ]; then
+			echo 'false'
+		else
+			echo 'true'
+		fi
+	else
+		if [ -L /sys/class/net/$bridgeName ]; then
+			echo 'true'
+		else
+			echo 'false'
+		fi
+	fi
+
+elif [ $command == 'remove' ]; then
+	interfaceType=${2:-}
+	linkName=${3:-}
+	validateRemove
+
+	if [ $interfaceType == 'link' ]; then
+
+		if [ -f $EXEC_NMCLI ]; then
+			# 1) Bring down the bridge slave connection
+			printInfo "Bringing down bridge slave '$bridgeSlave'"
+			$EXEC_NMCLI connection down bridge-slave-$linkName
+
+			# 2) Remove the network interface from the bridge
+			printInfo "Removing '$linkName' from the bridge interface"
+			$EXEC_NMCLI connection delete bridge-slave-$linkName
+
+			# 2) Bring up network interface
+			printInfo "Bringing up network interface '$linkName'"
+			$EXEC_NMCLI connection up $linkName
+		else
+			printInfo "Removing '$linkName' from the bridge interface"
+			$EXEC_IP link set $linkName nomaster
+		fi
+
+	elif [ $interfaceType == 'tap' ]; then
+
+		printInfo "Removing tap interface '$linkName'"
+
+		if [ -f $EXEC_NMCLI ]; then
+			$EXEC_NMCLI connection delete $linkName
+		else
+			$EXEC_IP tuntap del $linkName mode tap
+		fi
+	fi
+
+elif [ $command == 'start' ]; then
+	bridgeName=${2:-}
+	validateStart
+
+	printInfo "Bringing up bridge interface '$bridgeName'"
+	$EXEC_NMCLI connection up id $bridgeName 1>/dev/null
+	sleep 1
+
+	tapList=( $($EXEC_NMCLI connection show | $EXEC_AWK '/[[:blank:]]tun[[:blank:]]/{ print $1 }' || true) )
+
+	# Set the TX queue length on every tap interface
+	for tapLink in "${tapList[@]}"; do
+		if [ $($EXEC_NMCLI -f connection.master connection show $tapLink | $EXEC_AWK '{ print $2 }') == "$bridgeName" ]; then
+			printInfo "Configuring txqueuelen on tap interface '$tapLink'"
+			$EXEC_IP link set $tapLink txqueuelen 32
+		fi
+	done
+
+elif [ $command == 'stop' ]; then
+	bridgeName=${2:-}
+	validateStop
+
+	printInfo "Bringing down bridge interface '$bridgeName'"
+	$EXEC_NMCLI connection down id $bridgeName 1>/dev/null
+fi
+
+exit 0

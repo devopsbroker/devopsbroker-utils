@@ -1,0 +1,184 @@
+#!/bin/bash
+
+#
+# archive - DevOpsBroker utility for managing various archive file formats
+#
+# Copyright (C) 2018 Edward Smith <edwardsmith@devopsbroker.org>
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# -----------------------------------------------------------------------------
+# Developed on Ubuntu 16.04.4 LTS running kernel.osrelease = 4.13.0-43
+#
+# A gzipped tar file is created with the name of the archive in the following
+# format:
+#
+# YYYY-MM-DD-DirName.tar.gz
+#
+# Parameters:
+#   $1: Name of directory to archive
+# -----------------------------------------------------------------------------
+#
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Preprocessing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Load /etc/devops/ansi.conf if ANSI_CONFIG is unset
+if [ -z "$ANSI_CONFIG" ] && [ -f /etc/devops/ansi.conf ]; then
+	source /etc/devops/ansi.conf
+fi
+
+${ANSI_CONFIG?"[1;91mCannot load '/etc/devops/ansi.conf': No such file[0m"}
+
+# Load /etc/devops/exec.conf if EXEC_CONFIG is unset
+if [ -z "$EXEC_CONFIG" ] && [ -f /etc/devops/exec.conf ]; then
+	source /etc/devops/exec.conf
+fi
+
+${EXEC_CONFIG?"[1;91mCannot load '/etc/devops/exec.conf': No such file[0m"}
+
+# Load /etc/devops/functions.conf if FUNC_CONFIG is unset
+if [ -z "$FUNC_CONFIG" ] && [ -f /etc/devops/functions.conf ]; then
+	source /etc/devops/functions.conf
+fi
+
+${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m"}
+
+################################## Functions ##################################
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     showHelp
+# Description:  Displays help message to the user
+# -----------------------------------------------------------------------------
+function showHelp() {
+
+	if [ "$command" == 'create' ]; then
+		printUsage 'archive create DIR'
+		echo ${romantic}
+		echo 'Creates a compressed TAR archive of the specified directory'${reset}
+	elif [ "$command" == 'list' ]; then
+		printUsage 'archive list FILE'
+		echo ${romantic}
+		echo 'Lists the contents of the specified compressed archive file'${reset}
+	fi
+
+}
+
+################################## Variables ##################################
+
+## Bash exec variables
+EXEC_AR=/usr/bin/ar
+
+## Options
+command="$1"
+
+## Variables
+validCommands=('create' 'list')
+showCommandHelp=false
+directory=''
+archiveName=''
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+if [ "$command" == 'help' ]; then
+	showCommandHelp=true
+	command="$2"
+fi
+
+# Display usage if no parameters given
+if [ -z "$command" ]; then
+	printUsage "archive ${gold}[help]${yellow} { create | list }"
+	exit 1
+fi
+
+if [ "$showCommandHelp" == 'true' ]; then
+
+	# Display error if invalid command
+	if [ $(containsElement "$command" "${validCommands[@]}") != '0' ]; then
+		printError 'archive' "Invalid command: '$command'"
+		echo
+		printUsage "archive ${gold}[help]${yellow} { create | list }"
+
+		exit 1
+	fi
+
+	showHelp
+	exit 0
+fi
+
+if [ -d "$command" ]; then
+	# Assume create archive if directory passed as first parameter
+	command='create'
+	directory="$1"
+	archiveName="$($EXEC_DATE '+%Y-%m-%d')-$($EXEC_BASENAME $directory).tar.gz"
+elif [ -f "$command" ]; then
+	# Assume list archive if directory passed as first parameter
+	command='list'
+	archiveName="$1"
+elif [ "$command" == 'create' ]; then
+	directory="$2"
+	archiveName="$($EXEC_DATE '+%Y-%m-%d')-$($EXEC_BASENAME $directory).tar.gz"
+elif [ "$command" == 'list' ]; then
+	archiveName="$2"
+else
+	# Display error if invalid command
+	printError 'archive' "Invalid command: '$command'"
+	echo
+	printUsage "archive ${gold}[help]${yellow} { create | list }"
+
+	exit 1
+fi
+
+################################### Actions ###################################
+
+if [ "$command" == 'create' ]; then
+
+	$EXEC_TAR -zcvf $archiveName $directory
+
+elif [ "$command" == 'list' ]; then
+
+	case "$archiveName" in
+		*.tar.gz | *.tgz | *.tar.xz | *.txz | *.tar.bz2 | *.tbz2 | *.tar)
+			$EXEC_TAR tvf "$archiveName"
+		;;
+		*.a)
+			$EXEC_AR -t "$archiveName" | $EXEC_SORT
+		;;
+		*.zip)
+			unzip -l "$archiveName"
+		;;
+		*.deb)
+			dpkg-deb -c "$archiveName"
+		;;
+		*.exe)
+			cabextract -l "$archiveName"
+		;;
+		*.lzma)
+			unlzma -l "$archiveName"
+		;;
+		*.xz)
+			unxz -l "$archiveName"
+		;;
+		*)
+			# Display error if archive type is unknown
+			printError 'archive' "Unknown archive type: $archiveName"
+			echo
+			printUsage "archive ${gold}[help]${yellow} { create | list }"
+
+			exit 1
+		;;
+	esac
+
+fi
+
+exit 0

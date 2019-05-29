@@ -1,0 +1,145 @@
+#!/bin/bash
+
+#
+# bindmount - DevOpsBroker utility for creating bind mounts
+#
+# Copyright (C) 2019 Edward Smith <edwardsmith@devopsbroker.org>
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# -----------------------------------------------------------------------------
+# Developed on Ubuntu 18.04.2 LTS running kernel.osrelease = 4.18.0-15
+#
+# This utility does the following tasks:
+#   o Moves data from the source directory to the destination directory
+#     - Confirmation is made to delete any data in the destination
+#   o Adds a bind mount entry from destination directory to source directory in /etc/fstab
+#   o Performs the actual bind mount between destination and source
+# -----------------------------------------------------------------------------
+#
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Preprocessing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Load /etc/devops/ansi.conf if ANSI_CONFIG is unset
+if [ -z "$ANSI_CONFIG" ] && [ -f /etc/devops/ansi.conf ]; then
+	source /etc/devops/ansi.conf
+fi
+
+${ANSI_CONFIG?"[1;91mCannot load '/etc/devops/ansi.conf': No such file[0m"}
+
+# Load /etc/devops/exec.conf if EXEC_CONFIG is unset
+if [ -z "$EXEC_CONFIG" ] && [ -f /etc/devops/exec.conf ]; then
+	source /etc/devops/exec.conf
+fi
+
+${EXEC_CONFIG?"[1;91mCannot load '/etc/devops/exec.conf': No such file[0m"}
+
+# Load /etc/devops/functions.conf if FUNC_CONFIG is unset
+if [ -z "$FUNC_CONFIG" ] && [ -f /etc/devops/functions.conf ]; then
+	source /etc/devops/functions.conf
+fi
+
+${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m"}
+
+# Load /etc/devops/functions-io.conf if FUNC_IO_CONFIG is unset
+if [ -z "$FUNC_IO_CONFIG" ] && [ -f /etc/devops/functions-io.conf ]; then
+	source /etc/devops/functions-io.conf
+fi
+
+${FUNC_IO_CONFIG?"[1;91mCannot load '/etc/devops/functions-io.conf': No such file[0m"}
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Robustness ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+set -o errexit                 # Exit if any statement returns a non-true value
+set -o nounset                 # Exit if use an uninitialised variable
+set -o pipefail                # Exit if any statement in a pipeline returns a non-true value
+IFS=$'\n\t'                    # Default the Internal Field Separator to newline and tab
+
+scriptName='bindmount'
+
+# Display error if not running as root
+if [ "$USER" != 'root' ]; then
+	printError $scriptName 'Permission denied (you must be root)'
+	exit 1
+fi
+
+################################## Variables ##################################
+
+## Options
+FROM_DIR=${1:-}
+TO_DIR=${2:-}
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+errorMessage=$(isValidDirectory $scriptName "$FROM_DIR")
+
+# Display error if source directory parameter is missing or invalid
+if [ "$errorMessage" != '0' ]; then
+	echo "$errorMessage"
+	echo
+	printUsage "$scriptName FROM_DIR TO_DIR"
+
+	exit 1
+fi
+
+errorMessage=$(isValidDirectory $scriptName "$TO_DIR")
+
+# Display error if destination directory parameter is missing or invalid
+if [ "$errorMessage" != '0' ]; then
+	echo "$errorMessage"
+	echo
+	printUsage "$scriptName $FROM_DIR TO_DIR"
+
+	exit 1
+fi
+
+# Display notice if TO_DIR is not empty
+if [ "$($EXEC_LS -A $TO_DIR)" ]; then
+	printNotice $scriptName "The $TO_DIR directory is not empty"
+	exit 0
+fi
+
+# Load all bind mounts from /etc/fstab
+set +o errexit
+mapfile -t bindMountList < <($EXEC_GREP [[:blank:]]bind[[:blank:]] /etc/fstab)
+set -o errexit
+
+# Display message if source dirctory has already been moved
+for bindMount in "${bindMountList[@]}"; do
+	if [[ "$bindMount" =~ [[:blank:]]$FROM_DIR[[:blank:]] ]]; then
+		printInfo "Source directory '$FROM_DIR' has already been bind mounted"
+		printInfo 'Exiting'
+		exit 0
+	fi
+done
+
+################################### Actions ###################################
+
+# Backup existing /etc/fstab
+printInfo 'Backing up /etc/fstab'
+$EXEC_CP -a /etc/fstab /etc/fstab.bak
+
+# Add bind mounts comment to /etc/fstab if necessary
+if [ "${#bindMountList[@]}" -eq 0 ]; then
+	# The -e flag tells echo to interpret the newline character
+	echo -e '\n# Bind mounts' >> /etc/fstab
+fi
+
+printInfo "Adding $TO_DIR bind mount to /etc/fstab"
+echo "$FROM_DIR	$TO_DIR	none	bind	0	0" >> /etc/fstab
+
+printInfo "Bind mounting $FROM_DIR directory to $TO_DIR"
+$EXEC_MOUNT --bind "$FROM_DIR" "$TO_DIR"
+
+exit 0

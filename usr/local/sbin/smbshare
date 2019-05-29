@@ -1,0 +1,302 @@
+#!/bin/bash
+
+#
+# smbshare - DevOpsBroker utility for creating and managing Samba shares
+#
+# Copyright (C) 2018 Edward Smith <edwardsmith@devopsbroker.org>
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# -----------------------------------------------------------------------------
+# Developed on Ubuntu 16.04.5 LTS running kernel.osrelease = 4.15.0-34
+#
+# Tips:
+#   o If you need to clean up the recent servers list in Nautilus, edit the
+#     ~/.config/nautilus/servers file
+# -----------------------------------------------------------------------------
+#
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Preprocessing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Load /etc/devops/ansi.conf if ANSI_CONFIG is unset
+if [ -z "$ANSI_CONFIG" ] && [ -f /etc/devops/ansi.conf ]; then
+	source /etc/devops/ansi.conf
+fi
+
+${ANSI_CONFIG?"[1;91mCannot load '/etc/devops/ansi.conf': No such file[0m"}
+
+# Load /etc/devops/exec.conf if EXEC_CONFIG is unset
+if [ -z "$EXEC_CONFIG" ] && [ -f /etc/devops/exec.conf ]; then
+	source /etc/devops/exec.conf
+fi
+
+${EXEC_CONFIG?"[1;91mCannot load '/etc/devops/exec.conf': No such file[0m"}
+
+# Load /etc/devops/functions.conf if FUNC_CONFIG is unset
+if [ -z "$FUNC_CONFIG" ] && [ -f /etc/devops/functions.conf ]; then
+	source /etc/devops/functions.conf
+fi
+
+${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m"}
+
+# Display error if not running as root
+if [ "$USER" != 'root' ]; then
+	printError 'smbshare' 'Permission denied (you must be root)'
+	exit 1
+fi
+
+################################## Functions ##################################
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     showHelp
+# Description:  Displays help message to the user
+# -----------------------------------------------------------------------------
+function showHelp() {
+	# BEGIN showHelp function
+
+	if [ "$command" == 'adduser' ]; then
+		printUsage 'smbshare adduser USER'
+		echo ${romantic}
+		echo 'Add an existing Linux user to the Samba password file'${reset}
+	elif [ "$command" == 'create' ]; then
+		printUsage 'smbshare create'
+		echo ${romantic}
+		echo 'Create a new Samba share'${reset}
+	fi
+
+	# END showHelp function
+}
+
+################################## Variables ##################################
+
+## Bash exec variables
+EXEC_GETENT=/usr/bin/getent
+EXEC_PDBEDIT=/usr/bin/pdbedit
+EXEC_SMBPASSWD=/usr/bin/smbpasswd
+
+## Options
+command="$1"
+
+## Variables
+showCommandHelp=false
+validCommands=('adduser' 'create')
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+if [ "$command" == 'help' ]; then
+	showCommandHelp=true
+	command="$2"
+	shift
+fi
+
+# Display usage if no parameters given
+if [ -z "$command" ]; then
+	printUsage 'smbshare { adduser | create }'
+	exit 1
+fi
+
+# Display error if invalid command
+if [ $(containsElement "$command" "${validCommands[@]}") != '0' ]; then
+	printError 'smbshare' "Invalid command: '$command'"
+	echo
+	printUsage 'smbshare { adduser | create }'
+
+	exit 1
+fi
+
+if [ "$showCommandHelp" == 'true' ]; then
+	showHelp
+	exit 0
+fi
+
+if [ $command == 'adduser' ]; then
+
+	username=${2:-$SUDO_USER}
+
+	errorMessage=$(isValidUsername 'smbshare' "$username")
+
+	# Display error if username parameter is missing or invalid
+	if [ "$errorMessage" != '0' ]; then
+		echo "$errorMessage"
+		echo
+		printUsage "smbshare adduser ${gold}[USER]"
+
+		exit 1
+	fi
+
+	if [ ! -z "$($EXEC_PDBEDIT -u $username -d 0 2>/dev/null)" ]; then
+		printInfo "User '$username' already has a Samba password file entry"
+		exit 0
+	fi
+fi
+
+################################### Actions ###################################
+
+if [ "$command" == 'adduser' ]; then
+
+	printInfo "Adding '$username' to the Samba password file"
+	$EXEC_SMBPASSWD -a $username -D 0
+
+elif [ "$command" == 'create' ]; then
+
+	rootDir=''
+
+	echo ${bold}
+	while [ -z "$rootDir" ]; do
+		echo -n ${purple}'What is the root directory for the Samba share? '${white}
+		read rootDir
+
+		if [ ! -z "$rootDir" ]; then
+			echo
+			echo ${yellow}"Use '${green}$rootDir${yellow}' for the share root directory?"${white}
+			select confirmRootDir in 'Yes' 'No'; do
+				echo
+				if [ "$confirmRootDir" == 'No' ]; then
+					rootDir=''
+				fi
+
+				break;
+			done
+		fi
+	done
+
+	if [[ ! "$rootDir" =~ /share/?$ ]]; then
+		rootDir="${rootDir}/share"
+	fi
+
+	COLUMNS=3
+	echo ${purple}'What type of Samba share do you want to create? '${white}
+	select shareType in 'Group' 'Public' 'User'; do
+		echo
+		if [ "$shareType" == 'Group' ] || [ "$shareType" == 'Public' ]; then
+			shareName=''
+			while [ -z "$shareName" ]; do
+				echo -n ${purple}'What is the name of the Samba share? '${white}
+				read shareName
+
+				# Display error if Samba share already exists
+				if $EXEC_GREP -Fq "[$shareName]" /etc/samba/smbshare.conf; then
+					echo ${red}"Samba share '[$shareName]' already exists"
+					shareName=''
+				fi
+			done
+		elif [ "$shareType" == 'User' ]; then
+			username=''
+			while [ -z "$username" ]; do
+				echo -n ${purple}'Which user is the Samba share for? '${white}
+				read username
+
+				# Display error if username parameter is invalid
+				if [ ! -z "$username" ] && [ -z "$($EXEC_GETENT passwd $username)" ]; then
+					echo ${red}"Cannot find '$username': No such user"
+					username=''
+				# Display error if Samba share username already exists
+				elif $EXEC_GREP -Fq "[$username]" /etc/samba/smbshare.conf; then
+					echo ${red}"Samba share '[$username]' already exists"
+					exit 1
+				fi
+			done
+		fi
+
+		echo
+		break;
+	done
+
+	# Create root share directory if necessary
+	if [ ! -d "$rootDir" ]; then
+		printInfo "Creating root share directory '$rootDir'"
+		$EXEC_MKDIR --parents --mode=755 "$rootDir"
+	fi
+
+	if [ "$shareType" == 'Group' ]; then
+		# Create group share directory if necessary
+		if [ ! -d "$rootDir/$shareName" ]; then
+			printInfo "Creating group share directory '$rootDir/$shareName'"
+			$EXEC_MKDIR --parents --mode=2770 "$rootDir/$shareName"
+			/bin/chown root:sambashare "$rootDir/$shareName"
+		fi
+
+		# Create Samba share
+		if [ -f /etc/samba/smbshare.conf ]; then
+			printInfo "Creating Samba share '[$shareName]'"
+			$EXEC_CP /etc/samba/smbshare.conf /etc/samba/smbshare.conf.bak
+		fi
+
+		echo -e "[$shareName]\n" \
+				"	path = $rootDir/$shareName\n" \
+				"	valid users = @sambashare\n" \
+				"	browsable = yes\n" \
+				"	read only = no\n" \
+				"	create mask = 660\n" \
+				"	directory mask = 770\n" >> /etc/samba/smbshare.conf
+
+	elif [ "$shareType" == 'Public' ]; then
+		# Create public share directory if necessary
+		if [ ! -d "$rootDir/$shareName" ]; then
+			printInfo "Creating public share directory '$rootDir/$shareName'"
+			$EXEC_MKDIR --parents --mode=777 "$rootDir/$shareName"
+			/bin/chown nobody:nogroup "$rootDir/$shareName"
+		fi
+
+		# Create Samba share
+		if [ -f /etc/samba/smbshare.conf ]; then
+			printInfo "Creating Samba share '[$shareName]'"
+			$EXEC_CP /etc/samba/smbshare.conf /etc/samba/smbshare.conf.bak
+		fi
+
+		echo -e "[$shareName]\n" \
+				"	path = $rootDir/$shareName\n" \
+				"	browsable = yes\n" \
+				"	read only = no\n" \
+				"	guest ok = yes\n" \
+				"	force user = nobody\n" \
+				"	create mask = 777\n" \
+				"	directory mask = 777\n" >> /etc/samba/smbshare.conf
+
+	elif [ "$shareType" == 'User' ]; then
+		# Add user to the Samba password file if necessary
+		if [ -z "$($EXEC_PDBEDIT -u $username -d 0 2>/dev/null)" ]; then
+			printInfo "Adding '$username' to the Samba password file"
+			$EXEC_SMBPASSWD -a $username -D 0
+		fi
+
+		# Create user share directory if necessary
+		if [ ! -d "$rootDir/$username" ]; then
+			printInfo "Creating user share directory '$rootDir/$username'"
+			$EXEC_MKDIR --parents --mode=750 "$rootDir/$username"
+			/bin/chown $username:$username "$rootDir/$username"
+		fi
+
+		# Create Samba share
+		if [ -f /etc/samba/smbshare.conf ]; then
+			printInfo "Creating Samba share '[$username]'"
+			$EXEC_CP /etc/samba/smbshare.conf /etc/samba/smbshare.conf.bak
+		fi
+
+		echo -e "[$username]\n" \
+		        "	path = $rootDir/$username\n" \
+		        "	valid users = $username\n" \
+		        "	browsable = no\n" \
+		        "	read only = no\n" \
+		        "	create mask = 640\n" \
+		        "	directory mask = 0750\n" >> /etc/samba/smbshare.conf
+	fi
+
+	# Restart smbd service
+	printInfo "Restarting smbd service"
+	$EXEC_SYSTEMCTL restart smbd.service
+
+fi
+
+exit 0

@@ -1,0 +1,655 @@
+#!/bin/bash
+
+#
+# gnome-config - DevOpsBroker script for configuring GNOME GSettings
+#
+# Copyright (C) 2018-2019 Edward Smith <edwardsmith@devopsbroker.org>
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+# -----------------------------------------------------------------------------
+# Developed on Ubuntu 18.04.1 LTS running kernel.osrelease = 4.15.0-36
+#
+# NOTE: This script *cannot* be executed as root. The dconf settings will not
+#       apply to the user otherwise
+# -----------------------------------------------------------------------------
+#
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Preprocessing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Load /etc/devops/ansi.conf if ANSI_CONFIG is unset
+if [ -z "$ANSI_CONFIG" ] && [ -f /etc/devops/ansi.conf ]; then
+	source /etc/devops/ansi.conf
+fi
+
+${ANSI_CONFIG?"[1;91mCannot load '/etc/devops/ansi.conf': No such file[0m"}
+
+# Load /etc/devops/exec.conf if EXEC_CONFIG is unset
+if [ -z "$EXEC_CONFIG" ] && [ -f /etc/devops/exec.conf ]; then
+	source /etc/devops/exec.conf
+fi
+
+${EXEC_CONFIG?"[1;91mCannot load '/etc/devops/exec.conf': No such file[0m"}
+
+# Load /etc/devops/functions.conf if FUNC_CONFIG is unset
+if [ -z "$FUNC_CONFIG" ] && [ -f /etc/devops/functions.conf ]; then
+	source /etc/devops/functions.conf
+fi
+
+${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m"}
+
+# Display error if running as root
+if [ "$USER" == 'root' ]; then
+	printError 'gnome-config' 'Permission denied (you cannot be root)'
+	exit 1
+fi
+
+################################## Functions ##################################
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     showHelp
+# Description:  Displays help message to the user
+# -----------------------------------------------------------------------------
+function showHelp() {
+	# BEGIN showHelp function
+
+	if [ "$command" == 'all' ]; then
+		printUsage 'gnome-config all'
+		echo ${romantic}
+		echo 'Executes all gnome-config commands (except for reset)'${reset}
+	elif [ "$command" == 'gnome' ]; then
+		printUsage 'gnome-config gnome'
+		echo ${romantic}
+		echo 'Performs configurations of Gnome settings'${reset}
+	elif [ "$command" == 'nautilus' ]; then
+		printUsage 'gnome-config nautilus'
+		echo ${romantic}
+		echo 'Performs Nautilus-specifc configurations'${reset}
+	elif [ "$command" == 'reset' ]; then
+		printUsage 'gnome-config reset'
+		echo ${romantic}
+		echo "Resets the user's dconf configuration (must restart to take effect)"${reset}
+	elif [ "$command" == 'terminal' ]; then
+		printUsage 'gnome-config terminal'
+		echo ${romantic}
+		echo 'Performs Gnome Terminal-specifc configurations'${reset}
+	elif [ "$command" == 'ubuntu' ]; then
+		printUsage 'gnome-config ubuntu'
+		echo ${romantic}
+		echo 'Performs Ubuntu-specific configurations'${reset}
+	fi
+
+	# END showHelp function
+}
+
+################################## Variables ##################################
+
+## Bash exec variables
+EXEC_DCONF=/usr/bin/dconf
+EXEC_GSETTINGS=/usr/bin/gsettings
+EXEC_XRANDR=/usr/bin/xrandr
+
+## Options
+command="$1"
+
+## Variables
+echoOnExit=false
+showCommandHelp=false
+validCommands=('all' 'gnome' 'nautilus' 'reset' 'terminal' 'ubuntu')
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+if [ "$command" == 'help' ]; then
+	showCommandHelp=true
+	command="$2"
+fi
+
+# Display usage if no parameters given
+if [ -z "$command" ]; then
+	printUsage "gnome-config ${gold}[help]${yellow} { all | gnome | nautilus | reset | terminal | ubuntu }"
+	exit 1
+fi
+
+# Display error if invalid command
+if [ $(containsElement "$command" "${validCommands[@]}") != '0' ]; then
+	printError 'gnome-config' "Invalid command: $command"
+	echo
+	printUsage "gnome-config ${gold}[help]${yellow} { all | gnome | nautilus | reset | terminal | ubuntu }"
+
+	exit 1
+fi
+
+if [ "$showCommandHelp" == 'true' ]; then
+	showHelp
+	exit 0
+fi
+
+################################### Actions ###################################
+
+# Clear screen only if called from command line
+if [ $SHLVL -eq 2 ]; then
+	clear
+fi
+
+printBox "DevOpsBroker $UBUNTU_RELEASE GSettings Configurator" 'true'
+
+if [ "$command" == 'reset' ]; then
+
+	printBanner 'Reset dconf user settings'
+
+	echo "${bold}${yellow}Are you sure you want to reset your dconf user settings?${white}"
+	select confirmReset in 'Yes' 'No'; do
+		echo
+		if [ "$confirmReset" == 'Yes' ]; then
+			printInfo 'Resetting dconf user settings'
+			$EXEC_RM $HOME/.config/dconf/user
+			echo
+			echo "${bold}${yellow}You must restart for the changes to take effect${reset}"
+		fi
+		break;
+	done
+
+	echo
+
+	exit 0
+fi
+
+if [ "$command" == 'gnome' ] || [ "$command" == 'all' ]; then
+
+	#
+	# org.gnome.desktop.background settings
+	#
+
+	# Set picture-options
+	if [ "$($EXEC_GSETTINGS get org.gnome.desktop.background picture-options)" != "'centered'" ]; then
+		printInfo "Setting background picture options to 'centered'"
+
+		$EXEC_GSETTINGS set org.gnome.desktop.background picture-options "'centered'"
+		echoOnExit=true
+	fi
+
+	# Set show-desktop-icons
+	if [ "$($EXEC_GSETTINGS get org.gnome.desktop.background show-desktop-icons)" != 'true' ]; then
+		printInfo 'Enabling show desktop icons'
+
+		$EXEC_GSETTINGS set org.gnome.desktop.background show-desktop-icons true
+		echoOnExit=true
+	fi
+
+	#
+	# org.gnome.desktop.interface settings
+	#
+
+	# Set clock-format
+	echo 'What clock format would you like?'
+	select clockFormat in '12h' '24h'; do
+		echo
+		printInfo "Configuring a $clockFormat clock format"
+
+		# Configure clock format
+		$EXEC_GSETTINGS set org.gnome.desktop.interface clock-format "'$clockFormat'"
+		echoOnExit=true
+
+		break;
+	done
+
+	# Set clock-show-date
+	if [ "$($EXEC_GSETTINGS get org.gnome.desktop.interface clock-show-date)" == 'false' ]; then
+		printInfo 'Enabling clock show date'
+
+		$EXEC_GSETTINGS set org.gnome.desktop.interface clock-show-date true
+		echoOnExit=true
+	fi
+
+	# Set clock-show-weekday
+	if [ "$($EXEC_GSETTINGS get org.gnome.desktop.interface clock-show-weekday)" == 'false' ]; then
+		printInfo 'Enabling clock show weekday'
+
+		$EXEC_GSETTINGS set org.gnome.desktop.interface clock-show-weekday true
+		echoOnExit=true
+	fi
+
+	# Set enable-animations
+	if [ "$($EXEC_GSETTINGS get org.gnome.desktop.interface enable-animations)" == 'false' ]; then
+		printInfo 'Enabling animations'
+
+		$EXEC_GSETTINGS set org.gnome.desktop.interface enable-animations true
+		echoOnExit=true
+	fi
+
+	#
+	# org.gnome.desktop.privacy settings
+	#
+
+	# Set remember-app-usage
+	if [ "$($EXEC_GSETTINGS get org.gnome.desktop.privacy remember-app-usage)" == 'false' ]; then
+		printInfo 'Enabling remember application usage history'
+
+		$EXEC_GSETTINGS set org.gnome.desktop.privacy remember-app-usage true
+		echoOnExit=true
+	fi
+
+	# Set recent-files-max-age
+	if [ "$($EXEC_GSETTINGS get org.gnome.desktop.privacy recent-files-max-age)" != '7' ]; then
+		printInfo 'Retain application usage history for seven days'
+
+		$EXEC_GSETTINGS set org.gnome.desktop.privacy recent-files-max-age 7
+		echoOnExit=true
+	fi
+
+	# Set remove-old-temp-files
+	if [ "$($EXEC_GSETTINGS get org.gnome.desktop.privacy remove-old-temp-files)" == 'false' ]; then
+		printInfo 'Enabling removal of old temporary files'
+
+		$EXEC_GSETTINGS set org.gnome.desktop.privacy remove-old-temp-files true
+		echoOnExit=true
+	fi
+
+	# Set old-files-age
+	if [ "$($EXEC_GSETTINGS get org.gnome.desktop.privacy old-files-age)" != 'uint32 1' ]; then
+		printInfo 'Purging old temporary files after one day'
+
+		$EXEC_GSETTINGS set org.gnome.desktop.privacy old-files-age 1
+		echoOnExit=true
+	fi
+
+	#
+	# org.gnome.desktop.screensaver settings
+	#
+
+	# Set picture-options
+	if [ "$($EXEC_GSETTINGS get org.gnome.desktop.screensaver picture-options)" != "'centered'" ]; then
+		printInfo "Setting screensaver picture options to 'centered'"
+
+		$EXEC_GSETTINGS set org.gnome.desktop.screensaver picture-options "'centered'"
+		echoOnExit=true
+	fi
+
+	#
+	# org.gnome.desktop.search-providers settings
+	#
+
+	# Set disabled search providers
+	disabledSearchProviders="$($EXEC_GSETTINGS get org.gnome.desktop.search-providers disabled)"
+	if [[ "$disabledSearchProviders" != *"'org.gnome.Software.desktop'"* ]]; then
+		printInfo 'Disabling search queries for Ubuntu Software'
+
+		if [ "$disabledSearchProviders" == '@as []' ]; then
+			$EXEC_GSETTINGS set org.gnome.desktop.search-providers disabled "['org.gnome.Software.desktop']"
+		else
+			$EXEC_GSETTINGS set org.gnome.desktop.search-providers disabled "${disabledSearchProviders%]*}, 'org.gnome.Software.desktop']"
+		fi
+		echoOnExit=true
+	fi
+
+	#
+	# org.gnome.desktop.session settings
+	#
+
+	# Set idle-delay, lock-enabled and lock-delay
+	echo
+	echo 'How many minutes of inactivity before turning screen off?'
+	select inactivePeriod in '1' '3' '5' '10' '15' '20' '30' '45' '60' 'Never'; do
+		echo
+		if [ "$inactivePeriod" == 'Never' ]; then
+			printInfo "Setting 'Screen Inactive Period' to 'Never'"
+
+			$EXEC_GSETTINGS set org.gnome.desktop.session idle-delay 0
+		else
+			printInfo "Setting 'Screen Inactive Period' to '$inactivePeriod minutes'"
+
+			$EXEC_GSETTINGS set org.gnome.desktop.session idle-delay $[ 60 * $inactivePeriod ]
+
+			echo
+			echo 'Want to enable locking the screen when it turns off?'
+			select lockScreen in 'Yes' 'No'; do
+				echo
+				if [ "$lockScreen" == 'Yes' ]; then
+					printInfo 'Enabling screen locking'
+
+					$EXEC_GSETTINGS set org.gnome.desktop.screensaver lock-enabled true
+
+					echo
+					echo 'How many minutes after screen goes blank before locking?'
+					select lockDelay in 'Immediately' '1' '3' '5' '10' '15' '20' '30' '45' '60'; do
+						echo
+						if [ "$lockDelay" == 'Immediately' ]; then
+							printInfo "Setting 'Screen Lock Delay' to 'Immediately'"
+
+							$EXEC_GSETTINGS set org.gnome.desktop.screensaver lock-delay 0
+						else
+							printInfo printInfo "Setting 'Screen Lock Delay' to '$lockDelay minutes'"
+
+							$EXEC_GSETTINGS set org.gnome.desktop.screensaver lock-delay $[ 60 * $lockDelay ]
+						fi
+
+						break;
+					done
+
+				elif [ "$lockScreen" == 'No' ]; then
+					printInfo 'Disabling screen locking'
+
+					$EXEC_GSETTINGS set org.gnome.desktop.screensaver lock-enabled false
+				fi
+
+				break;
+			done
+		fi
+
+		echoOnExit=true
+		break;
+	done
+
+	#
+	# org.gnome.desktop.wm.preferences settings
+	#
+
+	# Set button-layout
+	echo
+	echo 'Which side do you want the window controls on?'
+	select windowControls in 'Right' 'Left'; do
+		echo
+		if [ "$windowControls" == 'Right' ]; then
+			printInfo 'Placing the window controls on the right'
+
+			$EXEC_GSETTINGS set org.gnome.desktop.wm.preferences button-layout "':minimize,maximize,close'"
+		else
+			printInfo 'Placing the window controls on the left'
+
+			$EXEC_GSETTINGS set org.gnome.desktop.wm.preferences button-layout "'close,maximize,minimize:'"
+		fi
+
+		echoOnExit=true
+		break;
+	done
+
+	#
+	# org.gnome.mutter settings
+	#
+
+	# Set dynamic-workspaces
+	if [ "$($EXEC_GSETTINGS get org.gnome.mutter dynamic-workspaces)" == 'false' ]; then
+		printInfo 'Enabling dynamic workspaces'
+
+		$EXEC_GSETTINGS set org.gnome.mutter dynamic-workspaces true
+		echoOnExit=true
+	fi
+
+	numMonitors=$($EXEC_XRANDR --query | $EXEC_GREP -Fc ' connected ')
+
+	# Set workspaces-only-on-primary
+	if [ $numMonitors -gt 1 ]; then
+		echo
+		echo 'Want to enable workspaces on all monitors?'
+		select workspaces in 'Yes' 'No'; do
+			echo
+			if [ "$workspaces" == 'Yes' ]; then
+				printInfo 'Enabling workspaces on all monitors'
+
+				# Enable workspaces on all monitors
+				$EXEC_GSETTINGS set org.gnome.mutter workspaces-only-on-primary false
+			else
+				printInfo 'Enabling workspaces on just primary monitor'
+
+				# Enable workspaces on just primary monitor
+				$EXEC_GSETTINGS set org.gnome.mutter workspaces-only-on-primary true
+			fi
+
+			echoOnExit=true
+			break;
+		done
+	fi
+
+	#
+	# org.gnome.system.location settings
+	#
+
+	# Set enabled
+	if [ "$($EXEC_GSETTINGS get org.gnome.system.location enabled)" == 'false' ]; then
+		printInfo "Enabling system location services"
+
+		$EXEC_GSETTINGS set org.gnome.system.location enabled true
+		echoOnExit=true
+	fi
+
+	#
+	# org.gnome.system.smb settings
+	#
+
+	# Set workgroup
+	if [ "$($EXEC_GSETTINGS get org.gnome.system.smb workgroup)" == "''" ]; then
+		printInfo "Setting SMB workgroup name to 'WORKGROUP'"
+
+		$EXEC_GSETTINGS set org.gnome.system.smb workgroup "'WORKGROUP'"
+		echoOnExit=true
+	fi
+fi
+
+if [ "$command" == 'nautilus' ] || [ "$command" == 'all' ]; then
+
+	#
+	# org.gnome.nautilus.desktop settings
+	#
+
+	# Set home-icon-visible
+	if [ "$($EXEC_GSETTINGS get org.gnome.nautilus.desktop home-icon-visible)" == 'false' ]; then
+		printInfo 'Making home icon visible on desktop'
+
+		$EXEC_GSETTINGS set org.gnome.nautilus.desktop home-icon-visible true
+		echoOnExit=true
+	fi
+
+	# Set network-icon-name
+	if [ "$($EXEC_GSETTINGS get org.gnome.nautilus.desktop network-icon-name)" == "'Network Servers'" ]; then
+		printInfo "Setting Network desktop icon name to 'Network'"
+
+		$EXEC_GSETTINGS set org.gnome.nautilus.desktop network-icon-name "'Network'"
+		echoOnExit=true
+	fi
+
+	# Set network-icon-visible
+	if [ "$($EXEC_GSETTINGS get org.gnome.nautilus.desktop network-icon-visible)" == 'false' ]; then
+		printInfo 'Making network icon visible on desktop'
+
+		$EXEC_GSETTINGS set org.gnome.nautilus.desktop network-icon-visible true
+		echoOnExit=true
+	fi
+
+	# Set trash-icon-name
+	if [ "$($EXEC_GSETTINGS get org.gnome.nautilus.desktop trash-icon-name)" != "'Trash'" ]; then
+		printInfo "Setting Trash desktop icon name to 'Trash'"
+
+		$EXEC_GSETTINGS set org.gnome.nautilus.desktop trash-icon-name "'Trash'"
+		echoOnExit=true
+	fi
+
+	# Set trash-icon-visible
+	if [ "$($EXEC_GSETTINGS get org.gnome.nautilus.desktop trash-icon-visible)" == 'false' ]; then
+		printInfo 'Making trash icon visible on desktop'
+
+		$EXEC_GSETTINGS set org.gnome.nautilus.desktop trash-icon-visible true
+		echoOnExit=true
+	fi
+
+	# Set volumes-visible
+	if [ "$($EXEC_GSETTINGS get org.gnome.nautilus.desktop volumes-visible)" == 'true' ]; then
+		printInfo 'Disabling show mounted volume icons on desktop'
+
+		$EXEC_GSETTINGS set org.gnome.nautilus.desktop volumes-visible false
+		echoOnExit=true
+	fi
+
+	#
+	# org.gnome.nautilus.preferences settings
+	#
+
+	# Set always-use-location-entry
+	if [ "$($EXEC_GSETTINGS get org.gnome.nautilus.preferences always-use-location-entry)" == 'false' ]; then
+		printInfo 'Enabling location entry'
+
+		$EXEC_GSETTINGS set org.gnome.nautilus.preferences always-use-location-entry true
+		echoOnExit=true
+	fi
+
+	# Set show-create-link
+	if [ "$($EXEC_GSETTINGS get org.gnome.nautilus.preferences show-create-link)" == 'false' ]; then
+		printInfo 'Enabling context menu for creating links'
+
+		$EXEC_GSETTINGS set org.gnome.nautilus.preferences show-create-link true
+		echoOnExit=true
+	fi
+
+	# Set show-hidden-files
+	if [ "$($EXEC_GSETTINGS get org.gnome.nautilus.preferences show-hidden-files)" == 'true' ]; then
+		printInfo 'Disabling Nautilus show hidden files'
+
+		$EXEC_GSETTINGS set org.gnome.nautilus.preferences show-hidden-files false
+		echoOnExit=true
+	fi
+
+	#
+	# org.gtk.Settings.FileChooser settings
+	#
+
+	# Set show-hidden
+	if [ "$($EXEC_GSETTINGS get org.gtk.Settings.FileChooser show-hidden)" == 'true' ]; then
+		printInfo 'Disabling GTK File Chooser show hidden files'
+
+		$EXEC_GSETTINGS set org.gtk.Settings.FileChooser show-hidden false
+		echoOnExit=true
+	fi
+
+	# Set sort-directories-first
+	if [ "$($EXEC_GSETTINGS get org.gtk.Settings.FileChooser sort-directories-first)" != 'true' ]; then
+		printInfo 'Enabling GTK File Chooser sort directories first'
+
+		$EXEC_GSETTINGS set org.gtk.Settings.FileChooser sort-directories-first true
+		echoOnExit=true
+	fi
+fi
+
+if [ "$command" == 'terminal' ] || [ "$command" == 'all' ]; then
+
+	#
+	# org.gnome.Terminal settings
+	#
+
+	defaultProfileID="$($EXEC_GSETTINGS get org.gnome.Terminal.ProfilesList default)"
+	defaultProfileID=${defaultProfileID:1:-1}
+	terminalSchema='org.gnome.Terminal.Legacy.Profile:'
+	keyPath='org/gnome/terminal/legacy/profiles:'
+
+	# Set all default Gnome Terminal settings
+	if [ "$($EXEC_GSETTINGS get "${terminalSchema}/${keyPath}/:$defaultProfileID/" visible-name)" == "'Unnamed'" ]; then
+		# Set default profile name to DevOpsBroker
+		$EXEC_GSETTINGS set "${terminalSchema}/${keyPath}/:$defaultProfileID/" visible-name "'DevOpsBroker'"
+
+		printInfo "Setting Gnome Terminal 'Show Menubar Default' to 'true'"
+		$EXEC_GSETTINGS set "${terminalSchema}/${keyPath}/:$defaultProfileID/" default-show-menubar true
+
+		printInfo "Setting Gnome Terminal 'Default Columns Size' to '160'"
+		$EXEC_GSETTINGS set "${terminalSchema}/${keyPath}/:$defaultProfileID/" default-size-columns 160
+
+		printInfo "Setting Gnome Terminal 'Default Rows Size' to '35'"
+		$EXEC_GSETTINGS set "${terminalSchema}/${keyPath}/:$defaultProfileID/" default-size-rows 35
+
+		printInfo "Setting Gnome Terminal 'Scrollback Lines' to '16384'"
+		$EXEC_GSETTINGS set "${terminalSchema}/${keyPath}/:$defaultProfileID/" scrollback-lines 16384
+
+		printInfo "Setting Gnome Terminal 'Use Theme Colors' to 'true'"
+		$EXEC_GSETTINGS set "${terminalSchema}/${keyPath}/:$defaultProfileID/" use-theme-colors true
+
+		printInfo "Setting Gnome Terminal 'Use Theme Transparency' to 'true'"
+		$EXEC_GSETTINGS set "${terminalSchema}/${keyPath}/:$defaultProfileID/" use-theme-transparency true
+
+		echoOnExit=true
+	fi
+fi
+
+if [ "$command" == 'ubuntu' ] || [ "$command" == 'all' ]; then
+
+	#
+	# com.canonical.Unity.Lenses settings
+	#
+
+	# Set remote-content-search
+	if [ "$($EXEC_GSETTINGS get com.canonical.Unity.Lenses remote-content-search)" != "'none'" ]; then
+		printInfo 'Disabling remote content search'
+
+		$EXEC_GSETTINGS set com.canonical.Unity.Lenses remote-content-search "'none'"
+		echoOnExit=true
+	fi
+
+	#
+	# com.ubuntu.update-manager settings
+	#
+
+	# Set autoclose-install-window
+	if [ "$($EXEC_GSETTINGS get com.ubuntu.update-manager autoclose-install-window)" == 'false' ]; then
+		printInfo 'Enabling auto-close of the install window after successful install'
+
+		$EXEC_GSETTINGS set com.ubuntu.update-manager autoclose-install-window true
+		echoOnExit=true
+	fi
+
+	# Set check-dist-upgrades
+	if [ "$($EXEC_GSETTINGS get com.ubuntu.update-manager check-dist-upgrades)" == 'true' ]; then
+		printInfo 'Disabling check for new distribution releases'
+
+		$EXEC_GSETTINGS set com.ubuntu.update-manager check-dist-upgrades false
+		echoOnExit=true
+	fi
+
+	# Set show-details
+	if [ "$($EXEC_GSETTINGS get com.ubuntu.update-manager show-details)" == 'false' ]; then
+		printInfo 'Enabling show details of an update'
+
+		$EXEC_GSETTINGS set com.ubuntu.update-manager show-details true
+		echoOnExit=true
+	fi
+
+	# Set show-versions
+	if [ "$($EXEC_GSETTINGS get com.ubuntu.update-manager show-versions)" == 'false' ]; then
+		printInfo 'Enabling show version in update list'
+
+		$EXEC_GSETTINGS set com.ubuntu.update-manager show-versions true
+		echoOnExit=true
+	fi
+
+	#
+	# com.ubuntu.update-notifier settings
+	#
+
+	# Set no-show-notifications
+	if [ "$($EXEC_GSETTINGS get com.ubuntu.update-notifier no-show-notifications)" == 'true' ]; then
+		printInfo 'Enabling show update notifications'
+
+		$EXEC_GSETTINGS set com.ubuntu.update-notifier no-show-notifications false
+		echoOnExit=true
+	fi
+
+	# Set show-apport-crashes
+	if [ "$($EXEC_GSETTINGS get com.ubuntu.update-notifier show-apport-crashes)" == 'false' ]; then
+		printInfo 'Enabling show apport crashes'
+
+		$EXEC_GSETTINGS set com.ubuntu.update-notifier show-apport-crashes true
+		echoOnExit=true
+	fi
+fi
+
+if [ "$echoOnExit" == 'true' ]; then
+	echo
+fi
+
+exit 0

@@ -1,0 +1,84 @@
+#!/bin/bash
+
+#
+# uuid - DevOpsBroker utility for generating Version 4 Variant 1 random UUID
+#
+# Copyright (C) 2018 Edward Smith <edwardsmith@devopsbroker.org>
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# -----------------------------------------------------------------------------
+# Developed on Ubuntu 16.04.4 LTS running kernel.osrelease = 4.13.0-45
+#
+# -----------------------------------------------------------------------------
+#
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Preprocessing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Load /etc/devops/ansi.conf if ANSI_CONFIG is unset
+if [ -z "$ANSI_CONFIG" ] && [ -f /etc/devops/ansi.conf ]; then
+	source /etc/devops/ansi.conf
+fi
+
+${ANSI_CONFIG?"[1;91mCannot load '/etc/devops/ansi.conf': No such file[0m"}
+
+# Load /etc/devops/exec.conf if EXEC_CONFIG is unset
+if [ -z "$EXEC_CONFIG" ] && [ -f /etc/devops/exec.conf ]; then
+	source /etc/devops/exec.conf
+fi
+
+${EXEC_CONFIG?"[1;91mCannot load '/etc/devops/exec.conf': No such file[0m"}
+
+# Load /etc/devops/functions.conf if FUNC_CONFIG is unset
+if [ -z "$FUNC_CONFIG" ] && [ -f /etc/devops/functions.conf ]; then
+	source /etc/devops/functions.conf
+fi
+
+${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m"}
+
+################################## Variables ##################################
+
+## Bash exec variables
+EXEC_OD=/usr/bin/od
+
+################################### Actions ###################################
+
+# Generate a Version 4 Variant 1 random UUID
+uuid=''
+
+dev_urandom=($($EXEC_DD if=/dev/urandom bs=16 count=1 status=none | $EXEC_OD -A x -t x1))
+
+uuidVersion=$(printf "%02x" "$(( ( 16#${dev_urandom[7]} & 0x0F ) | 0x40 ))")
+uuidVariant=$(printf "%02x" "$(( ( 16#${dev_urandom[9]} & 0x3F ) | 0x80 ))")
+
+uuid=$uuid"${dev_urandom[1]}"
+uuid=$uuid"${dev_urandom[2]}"
+uuid=$uuid"${dev_urandom[3]}"
+uuid=$uuid"${dev_urandom[4]}-"
+uuid=$uuid"${dev_urandom[5]}"
+uuid=$uuid"${dev_urandom[6]}-"
+uuid=$uuid"$uuidVersion"
+uuid=$uuid"${dev_urandom[8]}-"
+uuid=$uuid"$uuidVariant"
+uuid=$uuid"${dev_urandom[10]}-"
+uuid=$uuid"${dev_urandom[11]}"
+uuid=$uuid"${dev_urandom[12]}"
+uuid=$uuid"${dev_urandom[13]}"
+uuid=$uuid"${dev_urandom[14]}"
+uuid=$uuid"${dev_urandom[15]}"
+uuid=$uuid"${dev_urandom[16]}"
+
+echo ${bold}$uuid${reset}
+
+exit 0

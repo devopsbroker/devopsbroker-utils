@@ -1,0 +1,209 @@
+#!/bin/bash
+
+#
+# wipedisk - DevOpsBroker utility for securely wiping disk drives
+#
+# Copyright (C) 2018 Edward Smith <edwardsmith@devopsbroker.org>
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# -----------------------------------------------------------------------------
+# Developed on Ubuntu 16.04.5 LTS running kernel.osrelease = 4.15.0-34
+#
+# -----------------------------------------------------------------------------
+#
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Preprocessing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Load /etc/devops/ansi.conf if ANSI_CONFIG is unset
+if [ -z "$ANSI_CONFIG" ] && [ -f /etc/devops/ansi.conf ]; then
+	source /etc/devops/ansi.conf
+fi
+
+${ANSI_CONFIG?"[1;91mCannot load '/etc/devops/ansi.conf': No such file[0m"}
+
+# Load /etc/devops/exec.conf if EXEC_CONFIG is unset
+if [ -z "$EXEC_CONFIG" ] && [ -f /etc/devops/exec.conf ]; then
+	source /etc/devops/exec.conf
+fi
+
+${EXEC_CONFIG?"[1;91mCannot load '/etc/devops/exec.conf': No such file[0m"}
+
+# Load /etc/devops/functions.conf if FUNC_CONFIG is unset
+if [ -z "$FUNC_CONFIG" ] && [ -f /etc/devops/functions.conf ]; then
+	source /etc/devops/functions.conf
+fi
+
+${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m"}
+
+# Display error if not running as root
+if [ "$USER" != 'root' ]; then
+	printError 'wipedisk' 'Permission denied (you must be root)'
+	exit 1
+fi
+
+################################## Variables ##################################
+
+## Bash exec variables
+EXEC_BETWEEN=/usr/local/bin/between
+EXEC_DD=/bin/dd
+EXEC_HDPARM=/sbin/hdparm
+EXEC_LSBLK=/bin/lsblk
+EXEC_UMOUNT=/bin/umount
+
+## Options
+deviceNode="$1"
+seekPos=0
+
+## Variables
+export TMPDIR=${TMPDIR:-'/tmp'}
+modelNumber=''
+deviceSize=''
+logicalBlockSize=''
+physicalBlockSize=''
+numSectors=''
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Display usage if no parameters given
+if [ -z "$deviceNode" ]; then
+	printUsage "wipedisk DEVICE_NODE ${gold}[SEEK_POS]"
+	exit 1
+fi
+
+# Gather Kernel Names and Mount Points
+mapfile -t partitionList < <($EXEC_LSBLK -n --output KNAME,MOUNTPOINT $deviceNode 2>/dev/null | $EXEC_SORT)
+
+deviceName="${partitionList[0]//[[:space:]]/}"
+
+# Display error and usage if invalid device node
+if [ ! -L "/sys/block/$deviceName" ]; then
+	printError 'wipedisk' "Cannot access '$deviceNode': Not a block device"
+	echo
+	printUsage "wipedisk DEVICE_NODE ${gold}[SEEK_POS]"
+
+	exit 1
+fi
+
+if [[ "$deviceName" == sr* ]]; then
+	printInfo 'Wipe disk does not support CD/DVD/BD-ROM devices'
+	exit 0
+fi
+
+unset partitionList[0]
+
+regExpr="(/|/boot|/boot/efi|/home|/tmp|/usr|/var|\\[SWAP\\])$"
+for partition in "${partitionList[@]}"; do
+	if [[ "$partition" =~ $regExpr ]]; then
+		printError 'wipedisk' "Cannot wipe system disk '$deviceNode'"
+		echo
+		printUsage 'wipedisk DEVICE_NODE'
+
+		exit 1
+	fi
+done
+
+if [ ! -z "$2" ]; then
+
+	if [[ "$2" =~ MiB$ ]]; then
+		seekPos=$[ ${2::-3} * 1024 * 1024 ]
+	elif [[ "$2" =~ GiB$ ]]; then
+		seekPos=$[ ${2::-3} * 1024 * 1024 * 1024 ]
+	fi
+
+fi
+
+################################### Actions ###################################
+
+# Gather information about the block device
+mapfile -t deviceInfo < <($EXEC_HDPARM -I $deviceNode 2>/dev/null)
+
+for info in "${deviceInfo[@]}"; do
+	if [[ "$info" =~ (Model Number:) ]]; then
+		modelNumber="$info"
+	elif [[ "$info" =~ (device size with M = 1000\*1000:) ]]; then
+		deviceSize=$(echo "$info" | $EXEC_BETWEEN \( \))
+		break;
+	fi
+done
+
+logicalBlockSize=$($EXEC_CAT /sys/block/$deviceName/queue/logical_block_size)
+physicalBlockSize=$($EXEC_CAT /sys/block/$deviceName/queue/physical_block_size)
+numSectors=$($EXEC_CAT /sys/block/$deviceName/size)
+
+if [ -z "$deviceSize" ]; then
+	deviceSize=$[ ($logicalBlockSize * $numSectors) / 1000000 ]
+
+	if [ $deviceSize -lt 1000 ]; then
+		deviceSize="${deviceSize} MB"
+	else
+		deviceSize="$[ $deviceSize / 1000 ] GB"
+	fi
+fi
+
+printBanner "Wipe disk '$deviceNode'"
+
+echo "${deviceNode}:"
+echo "$modelNumber"
+printf "\tDevice Size:\t    $deviceSize\n"
+printf "\tBlock Size:\t    $physicalBlockSize bytes\n"
+printf "\tNum Sectors:\t    %'d\n" $numSectors
+
+echo -e '\tPartitions:'
+for partition in "${partitionList[@]}"; do
+	echo -e "\t\t\t    $partition"
+done
+echo
+
+echo "${bold}${yellow}Are you sure you want to wipe disk '${green}$deviceNode${yellow}'?${white}"
+select confirmWipe in 'Yes' 'No'; do
+	if [ "$confirmWipe" == 'Yes' ]; then
+		numBytes=$[ $logicalBlockSize * $numSectors ]
+
+		# Adjust numSectors to represent the physical block size if necessary
+		if [ $logicalBlockSize -ne $physicalBlockSize ]; then
+			$numSectors=$[ $numBytes / $physicalBlockSize ]
+		fi
+
+		# Adjust seek position to number of physical blocks
+		if [ $seekPos -gt 0 ]; then
+			numBytes=$[ $numBytes - $seekPos ]
+			seekPos=$[ $seekPos / $physicalBlockSize ]
+			numSectors=$[ $numSectors - $seekPos ]
+
+			echo
+			printInfo "Seeking ahead $seekPos blocks"
+		fi
+
+		echo
+		for partition in "${partitionList[@]}"; do
+			partitionInfo=( $partition )
+
+			printInfo "Unmounting '/dev/${partitionInfo[0]}' partition "
+
+			$EXEC_UMOUNT /dev/${partitionInfo[0]}
+		done
+
+		echo
+		printInfo 'Wiping disk'
+		$EXEC_DD if=/dev/urandom ibs=$physicalBlockSize count=$numSectors status=none | pv --size $numBytes | $EXEC_DD of=$deviceNode obs=$physicalBlockSize seek=$seekPos status=none
+
+		echo
+		printInfo 'Disk wipe complete'
+		echo
+	fi
+	break;
+done
+
+exit 0

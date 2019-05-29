@@ -1,0 +1,161 @@
+#!/bin/bash
+
+#
+# extract - DevOpsBroker utility for decompressing just about any compressed
+#	    file format
+#
+# Copyright (C) 2018 Edward Smith <edwardsmith@devopsbroker.org>
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# -----------------------------------------------------------------------------
+# Developed on Ubuntu 16.04.4 LTS running kernel.osrelease = 4.13.0-43
+#
+# See https://www.digitalocean.com/community/tutorials/an-introduction-to-useful-bash-aliases-and-functions
+# for more information regarding this utility.
+#
+# Parameters:
+#   $1: Name of compressed file to extract
+# -----------------------------------------------------------------------------
+#
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Preprocessing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Load /etc/devops/ansi.conf if ANSI_CONFIG is unset
+if [ -z "$ANSI_CONFIG" ] && [ -f /etc/devops/ansi.conf ]; then
+	source /etc/devops/ansi.conf
+fi
+
+${ANSI_CONFIG?"[1;91mCannot load '/etc/devops/ansi.conf': No such file[0m"}
+
+# Load /etc/devops/exec.conf if EXEC_CONFIG is unset
+if [ -z "$EXEC_CONFIG" ] && [ -f /etc/devops/exec.conf ]; then
+	source /etc/devops/exec.conf
+fi
+
+${EXEC_CONFIG?"[1;91mCannot load '/etc/devops/exec.conf': No such file[0m"}
+
+# Load /etc/devops/functions.conf if FUNC_CONFIG is unset
+if [ -z "$FUNC_CONFIG" ] && [ -f /etc/devops/functions.conf ]; then
+	source /etc/devops/functions.conf
+fi
+
+${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m"}
+
+################################## Variables ##################################
+
+## Options
+fileNameList=( $@ )
+listSize="${#fileNameList[@]}"
+extractDir="./"
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Display usage if no parameters given
+if [ $listSize -eq 0 ]; then
+	printUsage "extract FILE... ${gold}[DIR]"
+	exit 1
+fi
+
+# Validate the list of files and optional directory
+paramIndex=0;
+
+for fileName in "${fileNameList[@]}"; do
+	if [ -f "$fileName" ]; then
+		paramIndex=$[ $paramIndex + 1 ]
+		continue
+	elif [ -d "$fileName" ]; then
+		paramIndex=$[ $paramIndex + 1 ]
+
+		if [ $paramIndex -lt $listSize ]; then
+			printError 'extract' "Directory '$fileName' must be the last parameter"
+			echo
+			printUsage "extract FILE... DIR"
+
+			exit 1
+		fi
+
+		extractDir="$fileName"
+		paramIndex=$[ $paramIndex - 1 ]
+		unset fileNameList[$paramIndex]
+		break
+	else
+		printError 'extract' "Cannot access '$fileName': No such file or directory"
+		echo
+		printUsage "extract FILE... ${gold}[DIR]"
+
+		exit 1
+	fi
+done
+
+################################### Actions ###################################
+
+for file in "${fileNameList[@]}"; do
+
+	case "$file" in
+		*.tar.gz | *.tgz)
+			tar xvzf "$file" --directory="$extractDir"
+		;;
+		*.tar.xz | *.txz)
+			tar xvJf "$file" --directory="$extractDir"
+		;;
+		*.tar.bz2 | *.tbz2)
+			tar xvjf "$file" --directory="$extractDir"
+		;;
+		*.tar)
+			tar xvf "$file" --directory="$extractDir"
+		;;
+		*.zip)
+			unzip "$file" -d "$extractDir"
+		;;
+		*.gz)
+			gunzip -k "$file"
+		;;
+		*.z)
+			uncompress "$file"
+		;;
+		*.deb)
+			dpkg-deb -R "$file" "$extractDir/${file::-4}/"
+		;;
+		*.exe)
+			cabextract -d "$extractDir" "$file"
+		;;
+		*.7z | *.arj | *.cab | *.chm | *.deb | *.dmg | *.iso | *.lzh | *.msi | *.rpm | *.udf | *.wim | *.xar)
+			7z x "$file"
+		;;
+		*.rar)
+			unrar x -ad "$file"
+		;;
+		*.lzma)
+			unlzma -k "$file"
+		;;
+		*.bz2)
+			bunzip2 "$file"
+		;;
+		*.xz)
+			unxz "$file"
+		;;
+		*)
+			# Display error if archive type is unknown
+			printError 'extract' "Unknown archive type: $file"
+			echo
+			printUsage "extract FILE... ${gold}[DIR]"
+
+			exit 1
+		;;
+	esac
+
+done
+
+exit 0

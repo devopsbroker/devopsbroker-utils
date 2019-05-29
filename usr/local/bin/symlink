@@ -1,0 +1,193 @@
+#!/bin/bash
+
+#
+# symlink - DevOpsBroker utility for creating symbolic links
+#
+# Copyright (C) 2018 Edward Smith <edwardsmith@devopsbroker.org>
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# -----------------------------------------------------------------------------
+# Developed on Ubuntu 16.04.4 LTS running kernel.osrelease = 4.13.0-43
+#
+# Create symbolic links between files.
+#
+# Parameters:
+#   $1: Symbolic link name
+#   $2: Target file or directory referenced by the link
+# -----------------------------------------------------------------------------
+#
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Preprocessing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Load /etc/devops/ansi.conf if ANSI_CONFIG is unset
+if [ -z "$ANSI_CONFIG" ] && [ -f /etc/devops/ansi.conf ]; then
+	source /etc/devops/ansi.conf
+fi
+
+${ANSI_CONFIG?"[1;91mCannot load '/etc/devops/ansi.conf': No such file[0m"}
+
+# Load /etc/devops/exec.conf if EXEC_CONFIG is unset
+if [ -z "$EXEC_CONFIG" ] && [ -f /etc/devops/exec.conf ]; then
+	source /etc/devops/exec.conf
+fi
+
+${EXEC_CONFIG?"[1;91mCannot load '/etc/devops/exec.conf': No such file[0m"}
+
+# Load /etc/devops/functions.conf if FUNC_CONFIG is unset
+if [ -z "$FUNC_CONFIG" ] && [ -f /etc/devops/functions.conf ]; then
+	source /etc/devops/functions.conf
+fi
+
+${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m"}
+
+################################## Functions ##################################
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:	showHelp
+# Description:	Displays help message to the user
+# -----------------------------------------------------------------------------
+function showHelp() {
+  # BEGIN showHelp function
+
+  printUsage "symlink ${gold}[-o OWNER:GROUP] ${yellow}LINK_NAME TARGET"
+
+  echo ${bold}
+  echo "Valid Options:${romantic}"
+  echo '  -o OWNER:GROUP	Create symlink with the specified user and group ownership'
+  echo ${reset}
+
+  # END showHelp function
+}
+
+################################## Variables ##################################
+
+## Options
+owner=''
+group=''
+linkName=''
+target=''
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Display usage if no parameters given
+if [ -z "$1" ]; then
+  showHelp
+
+  exit 1
+fi
+
+while [[ "$1" == -* ]]; do
+
+  if [ "$1" == '-o' ]; then
+
+    # Display error and usage if no OWNER:GROUP specified
+    if [ -z "$2" ]; then
+      printError 'symlink' 'Missing OWNER:GROUP parameter'
+      echo
+      showHelp
+
+      exit 1
+
+    # Display error and usage if invalid OWNER:GROUP value specified
+    elif [[ ! "$2" =~ ^.+:.+$ ]]; then
+      printError 'symlink' "Invalid OWNER:GROUP value: '$2'"
+      echo
+      showHelp
+
+      exit 1
+    fi
+
+    IFS=':'; ownerGroup=($2); unset IFS;
+    owner="${ownerGroup[0]}"
+    group="${ownerGroup[1]}"
+
+    # Display error if owner is invalid
+    if [ -z "$($EXEC_GETENT passwd $owner)" ]; then
+      printError 'symlink' "Cannot find '$owner': No such user"
+      echo
+      printUsage 'symlink -o OWNER:GROUP LINK_NAME TARGET'
+
+      exit 1
+    fi
+
+    # Display error if group is invalid
+    if [ -z "$($EXEC_GETENT group $group)" ]; then
+      printError 'symlink' "Cannot find '$group': No such group"
+      echo
+      printUsage "symlink -o $owner:GROUP LINK_NAME TARGET"
+
+      exit 1
+    fi
+
+    shift 2
+
+  # Display error and usage if invalid parameter specified
+  else
+    printError 'symlink' "Invalid option: '$1'"
+    echo
+    showHelp
+
+    exit 1
+  fi
+
+done
+
+linkName="$1"
+target="$2"
+
+# Display error and usage if no LINK_NAME specified
+if [ -z "$linkName" ]; then
+  printError 'symlink' 'Missing LINK_NAME parameter'
+  echo
+  showHelp
+
+  exit 1
+fi
+
+# Display error and usage if no TARGET specified
+if [ -z "$target" ]; then
+  printError 'symlink' 'Missing TARGET parameter'
+  echo
+  showHelp
+
+  exit 1
+fi
+
+# Display error if target not valid file or directory
+if [ ! -f "$target" ] && [ ! -d "$target" ]; then
+  printError 'symlink' "Cannot access '$target': No such file or directory"
+  echo
+
+  if [ -z $owner ]; then
+    printUsage "symlink $linkName TARGET"
+  else
+    printUsage "symlink -o $owner:$group $linkName TARGET"
+  fi
+
+  exit 1
+fi
+
+
+################################### Actions ###################################
+
+# Create symbolic link
+ln -s "$target" "$linkName"
+
+# Change link ownership
+if [ ! -z $owner ]; then
+  $EXEC_CHOWN --changes --no-dereference $owner:$group ${linkName}
+fi
+
+exit 0

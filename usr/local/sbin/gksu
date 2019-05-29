@@ -1,0 +1,110 @@
+#!/bin/bash
+
+#
+# gksu - DevOpsBroker pkexec wrapper script providing legacy gksu functionality
+#
+# Copyright (C) 2018 Edward Smith <edwardsmith@devopsbroker.org>
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# -----------------------------------------------------------------------------
+# Developed on Ubuntu 18.04.1 LTS running kernel.osrelease = 4.15.0-36
+#
+# gksu was deprecated and removed from the Debian repositories in favor of
+# PolicyKit (whatever that is). This script brings back gksu by wrapping the
+# pkexec utility.
+# -----------------------------------------------------------------------------
+#
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Preprocessing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Load /etc/devops/ansi.conf if ANSI_CONFIG is unset
+if [ -z "$ANSI_CONFIG" ] && [ -f /etc/devops/ansi.conf ]; then
+	source /etc/devops/ansi.conf
+fi
+
+${ANSI_CONFIG?"[1;91mCannot load '/etc/devops/ansi.conf': No such file[0m"}
+
+# Load /etc/devops/exec.conf if EXEC_CONFIG is unset
+if [ -z "$EXEC_CONFIG" ] && [ -f /etc/devops/exec.conf ]; then
+	source /etc/devops/exec.conf
+fi
+
+${EXEC_CONFIG?"[1;91mCannot load '/etc/devops/exec.conf': No such file[0m"}
+
+# Load /etc/devops/functions.conf if FUNC_CONFIG is unset
+if [ -z "$FUNC_CONFIG" ] && [ -f /etc/devops/functions.conf ]; then
+	source /etc/devops/functions.conf
+fi
+
+${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m"}
+
+################################## Variables ##################################
+
+## Bash exec variables
+EXEC_PKEXEC=/usr/bin/pkexec
+
+## Options
+username=''
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Display usage if no parameters given
+if [ "$#" -eq 0 ]; then
+	printUsage "gksu ${gold}[--user username]${yellow} PROGRAM ${gold}[ARGUMENTS...]"
+	exit 1
+fi
+
+# Process command-line options
+while [[ "$2" == -* ]]; do
+
+	# Username option
+	if [ "$2" == '--user' ]; then
+
+		username="$3"
+		errorMessage=$(isValidUsername 'gksu' "$username")
+
+		# Display error if username parameter is missing or invalid
+		if [ "$errorMessage" != '0' ]; then
+			echo "$errorMessage"
+			echo
+			printUsage "gksu ${gold}[--user username]${yellow} PROGRAM ${gold}[ARGUMENTS...]"
+
+			exit 1
+		fi
+
+		shift 2
+	else
+		# Display error and help if option parameter is not valid
+		printError 'gksu' "Invalid option: '$2'"
+		echo
+		printUsage "gksu ${gold}[--user username]${yellow} PROGRAM ${gold}[ARGUMENTS...]"
+
+		exit 1
+	fi
+done
+
+################################### Actions ###################################
+
+if [ -z "$username" ]; then
+
+	$EXEC_PKEXEC $EXEC_ENV DISPLAY=$DISPLAY XAUTHORITY=$XAUTHORITY TMPDIR="$TMPDIR" "$@"
+
+else
+
+	$EXEC_PKEXEC $EXEC_ENV DISPLAY=$DISPLAY XAUTHORITY=$XAUTHORITY TMPDIR="$TMPDIR" --user "$username" "$@"
+
+fi
+
+exit 0

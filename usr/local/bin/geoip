@@ -1,0 +1,303 @@
+#!/bin/bash
+
+#
+# geoip - DevOpsBroker utility to look up geolocation data of an IP Address
+#
+# Copyright (C) 2018-2019 Edward Smith <edwardsmith@devopsbroker.org>
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# -----------------------------------------------------------------------------
+# Developed on Ubuntu 16.04.4 LTS running kernel.osrelease = 4.13.0-43
+#
+# This product includes GeoLite2 data created by MaxMind, available from
+# http://www.maxmind.com
+#
+# The reason this script exists is to replicate the functionality found in the
+# geoip-bin package. The GeoLite Legacy database used by geoip-bin is being
+# discontinued by MaxMind. See https://support.maxmind.com/geolite-legacy-discontinuation-notice/
+# for more information.
+#
+# By default, this script uses the GeoLite2 City database as it has much more
+# detailed information about the IP address than just which country it is from.
+# See https://dev.maxmind.com/geoip/geoip2/geolite2/ for more information.
+#
+# o Lookup ISO Country Code of your Public IP Address
+# geoip lookup $(public-ip) country iso_code
+# -----------------------------------------------------------------------------
+#
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Preprocessing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Load /etc/devops/ansi.conf if ANSI_CONFIG is unset
+if [ -z "$ANSI_CONFIG" ] && [ -f /etc/devops/ansi.conf ]; then
+	source /etc/devops/ansi.conf
+fi
+
+${ANSI_CONFIG?"[1;91mCannot load '/etc/devops/ansi.conf': No such file[0m"}
+
+# Load /etc/devops/exec.conf if EXEC_CONFIG is unset
+if [ -z "$EXEC_CONFIG" ] && [ -f /etc/devops/exec.conf ]; then
+	source /etc/devops/exec.conf
+fi
+
+${EXEC_CONFIG?"[1;91mCannot load '/etc/devops/exec.conf': No such file[0m"}
+
+# Load /etc/devops/functions.conf if FUNC_CONFIG is unset
+if [ -z "$FUNC_CONFIG" ] && [ -f /etc/devops/functions.conf ]; then
+	source /etc/devops/functions.conf
+fi
+
+${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m"}
+
+# Load /etc/devops/functions-io.conf if FUNC_IO_CONFIG is unset
+if [ -z "$FUNC_IO_CONFIG" ] && [ -f /etc/devops/functions-io.conf ]; then
+	source /etc/devops/functions-io.conf
+fi
+
+${FUNC_IO_CONFIG?"[1;91mCannot load '/etc/devops/functions-io.conf': No such file[0m"}
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Robustness ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+set -o errexit                 # Exit if any statement returns a non-true value
+set -o nounset                 # Exit if use an uninitialised variable
+set -o pipefail                # Exit if any statement in a pipeline returns a non-true value
+IFS=$'\n\t'                    # Default the Internal Field Separator to newline and tab
+
+scriptName='geoip'
+
+################################## Functions ##################################
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     showHelp
+# Description:  Displays the usage message to the user
+# -----------------------------------------------------------------------------
+function showHelp() {
+	# BEGIN showHelp function
+
+	printUsage "geoip COMMAND ${gold}[OPTION]... [IP_ADDR] [DATA PATH]"
+
+	echo ${bold}
+	echo "Valid Commands:${romantic}"
+	echo '  lookup	Performs look up of an IP address in a MaxMind DB file'
+	echo '  status	Display creation date of the GeoLite2 database file'
+	echo '  update	Downloads and updates the GeoLite2 database'
+
+	echo ${white}
+	echo "Valid Options:${romantic}"
+	echo '  -d directory	Specify a custom directory containing the GeoLite2 database'
+	echo '  -f filename	Specify a custom path to a single GeoLite2 database file'
+	echo ${reset}
+
+	# END showHelp function
+}
+
+################################## Variables ##################################
+
+## Bash exec variables
+EXEC_VERIFYIP=/usr/local/bin/verifyip
+GEOIPLOOKUP=/usr/bin/mmdblookup
+
+sudoCommands=("update")
+validCommands=(${sudoCommands[@]} 'lookup' 'status')
+
+## Options
+geoDbDir="/usr/share/GeoLite2"
+geoDbFile="GeoLite2-City.mmdb"
+
+# Command is the first parameter
+command=${1:-}
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Display usage if no parameters given
+if [ -z $command ]; then
+	showHelp
+	exit 1
+fi
+
+# Display error if invalid command
+if [ $(containsElement "$command" "${validCommands[@]}") != '0' ]; then
+	printError 'geoip' "Invalid command: $command"
+	echo
+	showHelp
+
+	exit 1
+fi
+
+# Display error if not running as root
+if [ $(containsElement "$command" "${sudoCommands[@]}") == '0' ] && [ "$USER" != 'root' ]; then
+	printError 'geoip' 'Permission denied (you must be root)'
+	exit 1
+fi
+
+# Process command-line options, if present
+shift
+clParams="$@"
+option=${1:-}
+
+while [[ "$option" =~ ^- ]]; do
+
+	if [ "$option" == '-d' ]; then
+		directoryName=${2:-}
+
+		# Display error if directory parameter is missing or invalid
+		errorMessage=$(isValidDirectory 'geoip' "$directoryName")
+
+		if [ "$errorMessage" != '0' ]; then
+			echo "$errorMessage"
+			echo
+
+			if [ $command == 'lookup' ]; then
+				printUsage "geoip $command -d directory IP_ADDR ${gold}[DATA PATH]"
+			else
+				printUsage "geoip $command -d directory"
+			fi
+
+			exit 1
+		fi
+
+		# Use geolocation database directory provided by user
+		geoDbDir="$directoryName"
+		shift 2
+
+	elif [ "$1" == '-f' ]; then
+		fileName=${2:-}
+
+		# Display error if file parameter is missing or invalid
+		errorMessage=$(isValidFile 'geoip' "$fileName")
+
+		if [ "$errorMessage" != '0' ]; then
+			echo "$errorMessage"
+			echo
+
+			if [ $command == 'lookup' ]; then
+				printUsage "geoip $command -f filename IP_ADDR ${gold}[DATA PATH]"
+			else
+				printUsage "geoip $command -f filename"
+			fi
+
+			exit 1
+		fi
+
+		# Use geolocation database file provided by user
+		geoDbFile="$fileName"
+		shift 2
+	else
+		# Display usage and error if option parameter is not valid
+		printError 'geoip' "Invalid option: $option"
+		echo
+		showHelp
+
+		exit 1
+	fi
+
+	option=${1:-}
+done
+
+if [ $command != 'update' ]; then
+	# Display error if MMDB file is missing or invalid
+	errorMessage=$(isValidFile 'geoip' "$geoDbDir/$geoDbFile")
+
+	if [ "$errorMessage" != '0' ]; then
+		echo "$errorMessage"
+		exit 1
+	fi
+fi
+
+# Display usage if only option parameters given for lookup command
+if [ -z "$option" ] && [ $command == 'lookup' ]; then
+	if [ -z "$clParams" ]; then
+		printUsage "geoip lookup IP_ADDR ${gold}[DATA PATH]"
+	else
+		printUsage "geoip lookup $clParams IP_ADDR ${gold}[DATA PATH]"
+	fi
+
+	exit 1
+fi
+
+################################### Actions ###################################
+
+if [ $command == 'lookup' ]; then
+	# BEGIN IP address lookup
+
+	## IP Address
+	ipAddr="$1"
+	shift
+
+	# Display error if IP Address is invalid
+	if ! $EXEC_VERIFYIP "$ipAddr"; then
+		printError 'geoip' "Invalid IP Address: $ipAddr"
+		echo
+
+		if [ -z "$clParams" ]; then
+			printUsage "geoip lookup IP_ADDR ${gold}[DATA PATH]"
+		else
+			printUsage "geoip lookup $clParams IP_ADDR ${gold}[DATA PATH]"
+		fi
+
+		exit 1
+	fi
+
+	## Data Path
+	dataPath="${@}"
+
+	if [ ${#dataPath} -eq 0 ]; then
+		$GEOIPLOOKUP --file "$geoDbDir/$geoDbFile" --ip ${ipAddr}
+	else
+		$GEOIPLOOKUP --file "$geoDbDir/$geoDbFile" --ip ${ipAddr} ${dataPath}
+	fi
+
+	# END IP address lookup
+elif [ $command == 'status' ]; then
+
+	$EXEC_STAT --format=%y "$geoDbDir/$geoDbFile"
+
+elif [ $command == 'update' ]; then
+	# BEGIN update command
+
+	printBanner 'Updating GeoLite2 City geolocation database'
+
+	echo "${bold}GeoLite2 DB Directory: ${purple}$geoDbDir"
+	echo "${white}GeoLite2 DB File: ${purple}$geoDbFile${reset}"
+	echo
+
+	# Create GeoLite2 directory
+	$EXEC_MKDIR --parents --mode=0755 "$geoDbDir"
+
+	printInfo 'Download latest GeoLite2 City database'
+
+	# Download GeoLite2 City geolocation database
+	$EXEC_WGET -P "$geoDbDir" http://geolite.maxmind.com/download/geoip/database/GeoLite2-City.tar.gz
+
+	printInfo 'Install GeoLite2 City database'
+
+	# Untar GeoLite2-City.tar.gz file
+	$EXEC_TAR zxf "$geoDbDir/GeoLite2-City.tar.gz" --no-same-owner --no-same-permissions -C "$geoDbDir"
+
+	newDBDir=$($EXEC_FIND "$geoDbDir" -type d -name "GeoLite2-City_*")
+	$EXEC_CHMOD --changes 0755 "$newDBDir"
+	$EXEC_CHMOD --changes 644 "$newDBDir/$geoDbFile"
+
+	# Move GeoLite2-City.mmdb file
+	$EXEC_MV "$newDBDir/$geoDbFile" "$geoDbDir"
+
+	# Remove GeoLite2-City directory and tar.gz file
+	$EXEC_RM -rf "$newDBDir"
+	$EXEC_RM "$geoDbDir/GeoLite2-City.tar.gz"
+
+	# END update command
+fi
+
+exit 0
