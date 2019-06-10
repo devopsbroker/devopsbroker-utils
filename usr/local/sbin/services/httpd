@@ -123,9 +123,13 @@ fi
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ IPSET PORTS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+set +o errexit                 # Ignore errors
+
 printInfo 'Remove HTTP/HTTPS from snooped ports blocking (IPSET)'
-$IPSET del snooped_ports 80           # HTTP
-$IPSET del snooped_ports 443          # HTTPS
+$IPSET del snooped_ports 80 2>/dev/null           # HTTP
+$IPSET del snooped_ports 443 2>/dev/null          # HTTPS
+
+set -o errexit
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ RAW PREROUTING ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
