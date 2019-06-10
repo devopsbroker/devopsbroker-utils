@@ -1,0 +1,169 @@
+#!/bin/bash
+
+#
+# httpd - DevOpsBroker utility for managing the httpd firewall services
+#
+# Copyright (C) 2019 Edward Smith <edwardsmith@devopsbroker.org>
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# -----------------------------------------------------------------------------
+# Developed on Ubuntu 18.04.2 LTS running kernel.osrelease = 4.18.0-21
+#
+# -----------------------------------------------------------------------------
+#
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Preprocessing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Load /etc/devops/ansi.conf if ANSI_CONFIG is unset
+if [ -z "$ANSI_CONFIG" ] && [ -f /etc/devops/ansi.conf ]; then
+	source /etc/devops/ansi.conf
+fi
+
+${ANSI_CONFIG?"[1;91mCannot load '/etc/devops/ansi.conf': No such file[0m"}
+
+# Load /etc/devops/exec.conf if EXEC_CONFIG is unset
+if [ -z "$EXEC_CONFIG" ] && [ -f /etc/devops/exec.conf ]; then
+	source /etc/devops/exec.conf
+fi
+
+${EXEC_CONFIG?"[1;91mCannot load '/etc/devops/exec.conf': No such file[0m"}
+
+# Load /etc/devops/functions.conf if FUNC_CONFIG is unset
+if [ -z "$FUNC_CONFIG" ] && [ -f /etc/devops/functions.conf ]; then
+	source /etc/devops/functions.conf
+fi
+
+${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m"}
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Robustness ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+set -o errexit                 # Exit if any statement returns a non-true value
+set -o nounset                 # Exit if use an uninitialised variable
+set -o pipefail                # Exit if any statement in a pipeline returns a non-true value
+IFS=$'\n\t'                    # Default the Internal Field Separator to newline and tab
+
+scriptName='smbd'
+
+# Display error if not running as root
+if [ "$USER" != 'root' ]; then
+	printError $scriptName 'Permission denied (you must be root)'
+	exit 1
+fi
+
+################################## Variables ##################################
+
+## Bash exec variables
+IPSET=/sbin/ipset
+IPTABLES_SAVE=/sbin/iptables-save
+EXEC_FIRECHAIN=/usr/local/sbin/firechain
+
+## Options
+command="${1:-}"
+NIC="${2:-}"
+
+## Variables
+validCommands=('enable')
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Display usage if no parameters given
+if [ -z "$command" ]; then
+	printUsage "$scriptName enable ${gold}NIC"
+	exit 1
+fi
+
+# Display error if invalid command
+if [ $(containsElement "$command" "${validCommands[@]}") != '0' ]; then
+	printError $scriptName "Invalid command: '$command'"
+	echo
+	printUsage "$scriptName enable ${gold}NIC"
+
+	exit 1
+fi
+
+if [ -z "$NIC" ]; then
+	mapfile -t ethList < <($EXEC_IP -br -4 addr show | $EXEC_GREP -Eo '^en(p|s)[a-z0-9]+')
+
+	if [ ${#ethList[@]} -eq 1 ]; then
+		ethInterface=(${ethList[0]})
+	else
+		COLUMNS=1
+		echo "${bold}${yellow}Which Ethernet interface do you want to configure?${white}"
+		select ethInterface in ${ethList[@]}; do
+			echo
+			break;
+		done
+	fi
+
+	NIC=$ethInterface
+else
+	# Display error if network interface parameter is invalid
+	if [ ! -L /sys/class/net/$NIC ]; then
+		printError $scriptName "Cannot access '$NIC': No such network interface"
+		echo
+		printUsage "$scriptName enable ${gold}NIC"
+
+		exit 1
+	fi
+fi
+
+################################### Actions ###################################
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ IPSET PORTS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+printInfo 'Remove HTTP/HTTPS from snooped ports blocking (IPSET)'
+$IPSET del snooped_ports 80           # HTTP
+$IPSET del snooped_ports 443          # HTTPS
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ RAW PREROUTING ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+printInfo 'Allow incoming HTTP/HTTPS TCP request packets (RAW PREROUTING)'
+$EXEC_FIRECHAIN add raw "raw-${NIC}-tcp-pre" tcp dest 443 do_not_track 2>/dev/null
+$EXEC_FIRECHAIN add raw "raw-${NIC}-tcp-pre" tcp dest 80 do_not_track 2>/dev/null
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ RAW OUTPUT ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+printInfo 'Allow outgoing HTTP/HTTPS TCP response packets (RAW OUTPUT)'
+$EXEC_FIRECHAIN add raw "raw-${NIC}-tcp-out" tcp source 443 do_not_track 2>/dev/null
+$EXEC_FIRECHAIN add raw "raw-${NIC}-tcp-out" tcp source 80 do_not_track 2>/dev/null
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ FILTER INPUT ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+printInfo 'Allow incoming HTTP/HTTPS TCP request packets (FILTER INPUT)'
+$EXEC_FIRECHAIN add filter "filter-${NIC}-tcp-in" tcp dest 443 ACCEPT 2>/dev/null
+$EXEC_FIRECHAIN add filter "filter-${NIC}-tcp-in" tcp dest 80 ACCEPT 2>/dev/null
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ FILTER OUTPUT ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+printInfo 'Allow outgoing HTTP/HTTPS TCP response packets (FILTER OUTPUT)'
+$EXEC_FIRECHAIN add filter "filter-${NIC}-tcp-out" tcp source 443 ACCEPT 2>/dev/null
+$EXEC_FIRECHAIN add filter "filter-${NIC}-tcp-out" tcp source 80 ACCEPT 2>/dev/null
+
+################################ IPTABLES-SAVE ################################
+
+echo
+printInfo 'Persisting iptables Rules'
+
+# Backup existing /etc/network/iptables.rules
+if [ -f /etc/network/iptables.rules ]; then
+	$EXEC_CP /etc/network/iptables.rules /etc/network/iptables.rules.bak
+fi
+
+# Save /etc/network/iptables.rules
+$IPTABLES_SAVE > /etc/network/iptables.rules
+
+echo
+
+exit 0
