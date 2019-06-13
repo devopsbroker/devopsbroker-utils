@@ -1,0 +1,65 @@
+/* navbar.css - CSS template for a navigation bar */
+
+nav {
+	width: 100%;
+	display: block;
+}
+
+nav ul {
+	list-style-type: none;
+	margin: 0;
+	padding: 0;
+	-webkit-transition: .5s;
+	transition: .5s;
+}
+
+/* Navigation bar item */
+
+nav ul li {
+	display: inline;
+	float: left;
+	position: relative;
+	-webkit-transition: .5s;
+	transition: .5s;
+}
+
+nav ul li a {
+	display: block;
+}
+
+nav span.caret-down {
+	display: inline-block;
+	font-size: 75%;
+	margin: 0px 0px 0px 4px;
+	position: absolute;
+	top: 50%;
+	-ms-transform: translateY(-50%);
+	transform: translateY(-50%);
+}
+
+/* Navigation bar dropdown */
+
+nav ul ul {
+	position: absolute;
+	left: 0;
+	top: 100%;
+	visibility: hidden;
+	opacity: 0;
+}
+
+nav ul li:hover > ul {
+	visibility: visible;
+	opacity: 1;
+}
+
+nav ul ul li {
+	min-width: 160px;
+}
+
+nav ul ul li a {
+	padding: 4px 0px 4px 2px;
+}
+
+nav li:hover, nav li:hover li {
+	background-color: grey;
+}

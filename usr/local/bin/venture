@@ -68,6 +68,8 @@ SCRIPT_INFO=( $($EXEC_SCRIPTINFO "$BASH_SOURCE") )
 SCRIPT_DIR="${SCRIPT_INFO[0]}"
 SCRIPT_EXEC="${SCRIPT_INFO[1]}"
 
+scriptName="${SCRIPT_EXEC}"
+
 ################################## Functions ##################################
 
 # ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
@@ -90,20 +92,33 @@ function createDirectory() {
 function showHelp() {
 	# BEGIN showHelp function
 
-	if [ "$command" == 'bashcomplete' ]; then
-		printUsage "venture bashcomplete ${gold}[-d directory] ${yellow}${paramNameMap['bashcomplete']}"
+	'bashcomplete' 'create' 'enum' 'fileinfo' 'new' 'struct' 'timestamp' 'website'
+
+	if [ -z "$command" ]; then
+		printUsage "$scriptName COMMAND ${gold}[OPTION...]"
+		echo
+		printUsage 'false' "$scriptName bashcomplete ${gold}FILE"
+		printUsage 'false' "$scriptName create ${gold}[OPTION...]"
+		printUsage 'false' "$scriptName enum ${gold}BRANCH_NAME"
+		printUsage 'false' "$scriptName fileinfo ${gold}BRANCH_NAME"
+		printUsage 'false' "$scriptName new ${gold}COMMIT_NUM FILE"
+		printUsage 'false' "$scriptName timestamp ${gold}FILE"
+		printUsage 'false' "$scriptName website ${gold}[FILE]"
+		echo
+	elif [ "$command" == 'bashcomplete' ]; then
+		printUsage "$scriptName $command ${gold}[-d directory] ${yellow}${paramNameMap['bashcomplete']}"
 		echo ${romantic}
 		echo 'Creates a Bash complete script'${reset}
 	elif [ "$command" == 'create' ]; then
-		printUsage "venture create ${gold}[-d directory] ${yellow}${paramNameMap['create']}"
+		printUsage "$scriptName $command ${gold}[-d directory] ${yellow}${paramNameMap['create']}"
 		echo ${romantic}
 		echo 'Creates a brand new C project'${reset}
 	elif [ "$command" == 'fileinfo' ]; then
-		printUsage "venture fileinfo ${gold}[-d directory] ${yellow}${paramNameMap['fileinfo']}"
+		printUsage "$scriptName $command ${gold}[-d directory] ${yellow}${paramNameMap['fileinfo']}"
 		echo ${romantic}
 		echo 'Generates HTML with information on the given file'${reset}
 	elif [ "$command" == 'new' ]; then
-		printUsage "venture new ${gold}[-d directory] ${yellow}${paramNameMap['new']}"
+		printUsage "$scriptName $command ${gold}[-d directory] ${yellow}${paramNameMap['new']}"
 		echo ${romantic}
 		echo 'Creates a new file'${reset}
 		echo
@@ -117,17 +132,21 @@ function showHelp() {
 		echo -e ${bold}${yellow}'  script.sh\t'     ${romantic}'Bash shell script file'
 		echo -e ${bold}${yellow}'  template.tpl\t'  ${romantic}'Bash shell template file'
 	elif [ "$command" == 'struct' ]; then
-		printUsage "venture struct ${gold}[-d directory] ${yellow}${paramNameMap['struct']}"
+		printUsage "$scriptName $command ${gold}[-d directory] ${yellow}${paramNameMap['struct']}"
 		echo ${romantic}
 		echo 'Creates a new C struct header and source files'${reset}
 	elif [ "$command" == 'enum' ]; then
-		printUsage "venture enum ${gold}[-d directory] ${yellow}${paramNameMap['enum']}"
+		printUsage "$scriptName $command ${gold}[-d directory] ${yellow}${paramNameMap['enum']}"
 		echo ${romantic}
 		echo 'Creates a new C enum header and source files'${reset}
 	elif [ "$command" == 'timestamp' ]; then
-		printUsage 'venture timestamp { changelog }'
+		printUsage "$scriptName $command { changelog }"
 		echo ${romantic}
 		echo 'Generates a proper timestamp for changelog entries'${reset}
+	elif [ "$command" == 'website' ]; then
+		printUsage "$scriptName $command { band }"
+		echo ${romantic}
+		echo 'Creates a new website from the specified template'${reset}
 	fi
 
 	if [ "$command" != 'timestamp' ]; then
@@ -135,6 +154,35 @@ function showHelp() {
 		echo ${bold}${white}'Valid Options:'${reset}
 		echo -e ${bold}${yellow}'  -d directory\t'  ${romantic}'The target directory'
 		echo ${reset}
+	fi
+
+	# END showHelp function
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     validateWebsite
+# Description:  Performs validation for the website command
+#
+# Parameters:
+#   templateName    The name of the website template to use
+# -----------------------------------------------------------------------------
+function validateWebsite() {
+	# Display error and usage if no template name parameter given
+	if [ -z "$templateName" ]; then
+		printError $scriptName 'Missing template name'
+		echo
+		printUsage "$scriptName $command { band }"
+
+		exit 1
+	fi
+
+	# Display error and usage if invalid template name parameter given
+	if [ ! -d /usr/local/bin/website/${templateName} ]; then
+		printError $scriptName "Invalid website template '$templateName'"
+		echo
+		printUsage "$scriptName $command { band }"
+
+		exit 1
 	fi
 }
 
@@ -150,7 +198,7 @@ command=${1:-}
 baseDir='.'
 
 ## Variables
-validCommands=( 'bashcomplete' 'create' 'enum' 'fileinfo' 'new' 'struct' 'timestamp' )
+validCommands=( 'bashcomplete' 'create' 'enum' 'fileinfo' 'new' 'struct' 'timestamp' 'website' )
 showCommandHelp=false
 
 declare -A paramNameMap
@@ -164,23 +212,22 @@ paramNameMap['struct']='com.example.foo.Bar'
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-if [ "$command" == 'help' ]; then
-	showCommandHelp=true
-	command="$2"
-	shift
-fi
-
 # Display usage if no parameters given
 if [ -z "$command" ]; then
-	printUsage "venture ${gold}[help]${yellow} { bashcomplete | create | enum | fileinfo | new | struct | timestamp }"
+	printUsage "$scriptName ${gold}[help]${yellow} COMMAND ${gold}[OPTION...]"
 	exit 1
 fi
 
+if [ "$command" == 'help' ]; then
+	showCommandHelp=true
+	command=${2:-}
+fi
+
 # Display error if invalid command
-if [ $(containsElement "$command" "${validCommands[@]}") != '0' ]; then
-	printError 'venture' "Invalid command: '$command'"
+if [ $command ] && [ $(containsElement "$command" "${validCommands[@]}") != '0' ]; then
+	printError $scriptName "Invalid command: '$command'"
 	echo
-	printUsage "venture ${gold}[help]${yellow} { bashcomplete | create | enum | fileinfo | new | struct | timestamp }"
+	printUsage "$scriptName ${gold}[help]${yellow} COMMAND ${gold}[OPTION...]"
 
 	exit 1
 fi
@@ -191,7 +238,7 @@ if [ "$showCommandHelp" == 'true' ]; then
 fi
 
 # Process command-line options
-while [[ "$2" == -* ]]; do
+while [[ "${2:-}" == -* ]]; do
 
 	# Base directory option
 	if [ "$2" == '-d' ]; then
@@ -285,7 +332,7 @@ elif [ "$command" == 'struct' ] || [ "$command" == 'enum' ]; then
 		exit 1
 	fi
 
-elif [ "$command" != 'timestamp' ]; then
+elif [ "$command" != 'timestamp' ] && [ "$command" != 'website' ]; then
 	fileName="$2"
 
 	# Display error and usage if no file name parameter given
@@ -503,6 +550,14 @@ elif [ "$command" == 'timestamp' ]; then
 
 	# Proper timestamp for a changelog entry
 	$EXEC_DATE +"%a, %d %b %Y %T %z"
+
+elif [ "$command" == 'website' ]; then
+	templateName=${2:-}
+	validateWebsite
+
+	printInfo "Copying website template '${templateName}' to $PWD"
+
+	$EXEC_CP -ruv --preserve=timestamps /usr/local/bin/website/${templateName} $PWD
 
 fi
 

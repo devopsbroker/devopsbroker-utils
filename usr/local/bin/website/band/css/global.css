@@ -1,0 +1,382 @@
+/* global.css - CSS template for global style settings */
+
+html {
+	box-sizing: border-box;
+	overflow-x: hidden;
+	-ms-text-size-adjust: 100%;
+	-webkit-text-size-adjust: 100%
+}
+
+*, *:before, *:after {
+	box-sizing: inherit;
+}
+
+body {
+	margin: 0;
+}
+
+article, aside, details, figcaption, figure, footer, header, main, menu, nav, section {
+	display: block;
+}
+
+summary {
+	display: list-item;
+}
+
+audio, canvas, progress, video {
+	display: inline-block;
+}
+
+progress {
+	vertical-align: baseline;
+}
+
+sub, sup {
+	font-size: 75%;
+	line-height: 0;
+	position: relative;
+	vertical-align: baseline;
+}
+
+a {
+	color: inherit;
+}
+
+/* Animation */
+
+.animate-top {
+	position: relative;
+	animation: animatetop 0.4s
+}
+
+@keyframes animatetop {
+	from {
+		top: -300px;
+		opacity: 0;
+	}
+
+	to {
+		top: 0;
+		opacity: 1;
+	}
+}
+
+/* Borders */
+
+.radius-4 {
+	border-radius: 4px;
+}
+
+.radius-50 {
+	border-radius: 50%;
+}
+
+.border {
+	border: 1px solid #ccc !important;
+}
+
+.border-top {
+	border-top: 1px solid #ccc !important
+}
+
+/* Colors */
+
+.bg-black {
+	background-color: black;
+}
+
+.bg-grey, .bg-hover-grey:hover {
+	color: black !important;
+	background-color: #ccc !important;
+}
+
+.bg-red, .bg-hover-red:hover {
+	color: #fff !important;
+	background-color: red !important
+}
+
+.bg-teal, .bg-hover-teal:hover {
+	color: #fff !important;
+	background-color: teal !important;
+}
+
+.bg-white {
+	background-color: white;
+}
+
+.fg-black {
+	color: black;
+}
+
+.fg-blue {
+	color: blue;
+}
+
+.fg-grey {
+	color: grey;
+}
+
+.fg-white {
+	color: white;
+}
+
+/* Fonts */
+
+.font-size-18 {
+	font-size: 18px !important;
+}
+
+.font-size-24 {
+	font-size: 24px !important;
+}
+
+/* Forms */
+
+button {
+	border: none;
+}
+
+.input-text {
+	padding: 8px;
+	border: 0;
+	width: 100%
+}
+
+/* Images */
+
+img {
+	max-width: 100%;
+	height: auto;
+	border-style: none;
+}
+
+.greyscale-50 {
+	filter: grayscale(50%);
+}
+
+.greyscale-75 {
+	filter: grayscale(75%);
+}
+
+.greyscale-100 {
+	filter: grayscale(100%);
+}
+
+.opacity, .opacity-hover:hover {
+	opacity: 0.60;
+}
+
+/* Layout */
+
+.percent-50 {
+	float: left;
+	width: 50%;
+}
+
+.percent-33 {
+	float: left;
+	width: 33.33333%;
+}
+
+.percent-32 {
+	float: left;
+	width: 32%;
+}
+
+/* micro clearfix hack - http://nicolasgallagher.com/micro-clearfix-hack/ */
+
+.row:before, .row:after {
+	content: " ";
+	display: table;
+}
+
+.row:after {
+	clear: both;
+}
+
+/* Links */
+
+a:link {
+	text-decoration: none;
+}
+
+a:visited {
+	text-decoration: none;
+}
+
+a:hover {
+	text-decoration: none;
+}
+
+a:active {
+	text-decoration: none;
+}
+
+/* Modals */
+
+.modal {
+	z-index: 3;
+	display: none;
+	padding-top: 100px;
+	position: fixed;
+	left: 0;
+	top: 0;
+	width: 100%;
+	height: 100%;
+	overflow: auto;
+	background-color: rgb(0, 0, 0);
+	background-color: rgba(0, 0, 0, 0.4)
+}
+
+/* Positioning */
+
+.float-right {
+	float: right !important;
+}
+
+.margin-top-8 {
+	margin-top: 8px !important;
+}
+
+.margin-right-8 {
+	margin-right: 8px !important;
+}
+
+.margin-top-16 {
+	margin-top: 16px !important;
+}
+
+.margin-bottom-16 {
+	margin-bottom: 16px !important;
+}
+
+.margin-left-16 {
+	margin-left: 16px !important;
+}
+
+.margin-right-16 {
+	margin-right: 16px !important;
+}
+
+.margin-large {
+	margin: 12px 24px !important;
+}
+
+.pad-bottom-8 {
+	padding-bottom: 8px !important;
+}
+
+.pad-left-8 {
+	padding-left: 8px !important;
+}
+
+.pad-right-8 {
+	padding-right: 8px !important;
+}
+
+.pad-top-16 {
+	padding-top: 16px !important;
+}
+
+.padding-small {
+	padding: 2px 8px !important;
+}
+
+.padding {
+	padding: 8px 16px !important;
+}
+
+.padding-large {
+    padding: 12px 24px !important;
+}
+
+.padding-12 {
+    padding: 12px !important;
+}
+
+.padding-16 {
+    padding: 16px !important;
+}
+
+.padding-32 {
+	padding-top: 32px !important;
+	padding-bottom: 32px !important;
+}
+
+.padding-64 {
+	padding-top: 64px !important;
+	padding-bottom: 64px !important;
+}
+
+.vertical-center {
+	margin: 0;
+	position: absolute;
+	top: 50%;
+	-ms-transform: translateY(-50%);
+	transform: translateY(-50%);
+}
+
+.bottom-center {
+	bottom: 0;
+	left: 50%;
+	position: absolute;
+	transform: translate(-50%, 0%);
+	-ms-transform: translate(-50%, 0%);
+}
+
+.top-right {
+	position: absolute;
+	right: 0;
+	top: 0;
+}
+
+/* Structure */
+
+div#header {
+	position: fixed;
+	top: 0;
+	width: 100%;
+	z-index: 1;
+}
+
+div#content {
+	margin-left: auto;
+	margin-right: auto;
+	max-width: 1920px;
+}
+
+section {
+	margin-left: auto;
+	margin-right: auto;
+}
+
+/* Tables */
+
+table {
+	border-collapse: collapse;
+}
+
+/* Text */
+
+.justify {
+	text-align: justify !important
+}
+
+.text-center {
+	text-align: center;
+}
+
+.width-100 {
+	width: 100%;
+}
+
+/* Misc */
+
+.badge {
+	background-color: #000;
+	color: #fff;
+	display: inline-block;
+	padding-left: 8px;
+	padding-right: 8px;
+	text-align: center;
+}
