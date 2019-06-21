@@ -92,8 +92,6 @@ function createDirectory() {
 function showHelp() {
 	# BEGIN showHelp function
 
-	'bashcomplete' 'create' 'enum' 'fileinfo' 'new' 'struct' 'timestamp' 'website'
-
 	if [ -z "$command" ]; then
 		printUsage "$scriptName COMMAND ${gold}[OPTION...]"
 		echo
