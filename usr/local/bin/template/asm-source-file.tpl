@@ -133,9 +133,12 @@ section .bss                ; RESX directives
 
 ; ══════════════════════════════ Assembly Code ═══════════════════════════════
 
-	global  $functionName
-	section .text
-$functionName:
+section .text               ; TEXT section
+
+; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ${functionName} ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+	global  ${functionName}:function
+${functionName}:
 
 .prologue:                            ; functions typically have a prologue
 ;	push      rbp                     ; save the caller frame pointer on the stack
@@ -147,7 +150,7 @@ $functionName:
 
 .epilogue:                            ; functions typically have an epilogue
 	xor       rax, rax                ; exit code 0
-;	leave                             ; movq rsp, rbp / popq rbp
+;	leave                             ; mov rsp, rbp / pop rbp
 	ret                               ; pop return address from stack and jump there
 
 EOF
