@@ -93,7 +93,7 @@ if [ $(containsElement "$command" "${validCommands[@]}") != '0' ]; then
 fi
 
 if [ -z "$NIC" ]; then
-	mapfile -t ethList < <($EXEC_IP -br -4 addr show | $EXEC_GREP -Eo '^en(p|s)[a-z0-9]+')
+	mapfile -t ethList < <($EXEC_IP -br -4 addr show | $EXEC_GREP -Eo '^e[a-z0-9]+')
 
 	if [ ${#ethList[@]} -eq 1 ]; then
 		ethInterface=(${ethList[0]})
