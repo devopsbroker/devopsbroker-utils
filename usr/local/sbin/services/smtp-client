@@ -73,6 +73,7 @@ command="${1:-}"
 NIC="${2:-}"
 
 ## Variables
+saveOnExit='false'
 validCommands=('enable')
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -130,6 +131,7 @@ $IPSET test tcp_client_ports 587
 if [ $? -ne 0 ]; then
 	printInfo 'Allow TCP SMTP client traffic'
 	$IPSET add tcp_client_ports 587      # SMTP
+	saveOnExit='true'
 fi
 
 set -o errexit
@@ -156,15 +158,17 @@ set -o errexit
 
 ################################# IPSET-SAVE ##################################
 
-printInfo 'Persisting IPSet configuration'
+if [ $"saveOnExit" == 'true' ]; then
+	printInfo 'Persisting IPSet configuration'
 
-# Backup existing /etc/network/ipset.conf
-if [ -f /etc/network/ipset.conf ]; then
-	$EXEC_CP /etc/network/ipset.conf /etc/network/ipset.conf.bak
+	# Backup existing /etc/network/ipset.conf
+	if [ -f /etc/network/ipset.conf ]; then
+		$EXEC_CP /etc/network/ipset.conf /etc/network/ipset.conf.bak
+	fi
+
+	# Save /etc/network/ipset.conf
+	$IPSET save > /etc/network/ipset.conf
 fi
-
-# Save /etc/network/ipset.conf
-$IPSET save > /etc/network/ipset.conf
 
 echo
 
