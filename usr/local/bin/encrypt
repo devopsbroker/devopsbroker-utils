@@ -51,52 +51,70 @@ fi
 
 ${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m"}
 
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Robustness ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+set -o errexit                 # Exit if any statement returns a non-true value
+set -o nounset                 # Exit if use an uninitialised variable
+set -o pipefail                # Exit if any statement in a pipeline returns a non-true value
+IFS=$'\n\t'                    # Default the Internal Field Separator to newline and tab
+
+scriptName='encrypt'
+
 ################################## Variables ##################################
 
 ## Bash exec variables
 EXEC_SHRED=/usr/bin/shred
 
+## Options
+fileOrDir="${1:-}"
+
+## Variables
+TMPDIR=${TMPDIR:-'/tmp'}
+
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 # Display usage if no parameters given
-if [ -z "$1" ]; then
-  printUsage 'encrypt FILE|DIR'
-  echo
+if [ -z "$fileOrDir" ]; then
+	printUsage "$scriptName { FILE | DIR }"
+	echo
 
-  exit 1
+	exit 1
 fi
 
-# Display error and usage if target not valid file or directory
-if [ ! -f "$1" ] && [ ! -d "$1" ]; then
-  printError 'encrypt' "Cannot access '$1': No such file or directory"
-  echo
-  printUsage 'encrypt FILE|DIR'
+if [ ! -f "$fileOrDir" ] && [ ! -d "$fileOrDir" ]; then
+	printError $scriptName "Cannot access '$fileOrDir': No such file or directory"
+	echo
+	printUsage "$scriptName { FILE | DIR }"
 
-  exit 1
+	exit 1
+fi
+
+if [ -d "$fileOrDir" ] && [[ "$fileOrDir" =~ /$ ]]; then
+	fileOrDir=${fileOrDir::-1}
 fi
 
 ################################### Actions ###################################
 
-if [ -d "$1" ]; then
+if [ -d "$fileOrDir" ]; then
+	fileName="$fileOrDir.tar.gz"
 
-  # Create directory.tar.gz file
-  filename="$1.tar.gz"
+	printInfo "Creating $fileName archive"
+	$EXEC_TAR -czf "$TMPDIR/$fileName" "$fileOrDir"
 
-  $EXEC_TAR -zcf "$filename" "$1"
+	printInfo "Encrypting $fileName"
+	$EXEC_GPG --symmetric -z 0 "$TMPDIR/$fileName" 2>/dev/null
 
-  # Encrypt the tarball
-  $EXEC_GPG --symmetric -z 0 "$filename" 2>/dev/null
+	# Shred the tarball if gpg succeeded
+	if [ -f "$TMPDIR/$fileName.gpg" ]; then
+		$EXEC_SHRED -uzn 0 "$TMPDIR/$fileName"
+	fi
 
-  # Shred the tarball if gpg succeeded
-  if [ -f "$filename.gpg" ]; then
-    $EXEC_SHRED -uzn 0 "$filename"
-  fi
+	$EXEC_MV "$TMPDIR/$fileName.gpg" $PWD
 
 else
 
-  filename="$1"
-
-  $EXEC_GPG --symmetric "$filename" 2>/dev/null
+	printInfo "Encrypting $fileOrDir"
+	$EXEC_GPG --symmetric "$fileOrDir" 2>/dev/null
 
 fi
 
