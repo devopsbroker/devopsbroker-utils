@@ -100,7 +100,7 @@ EXEC_CONVERT=/usr/bin/convert
 EXEC_IDENTIFY=/usr/bin/identify
 
 ## Options
-pngFile="$1"
+pngFile="${1:-}"
 
 ## Variables
 export TMPDIR=${TMPDIR:-'/tmp'}
@@ -120,7 +120,7 @@ if [ "$errorMessage" != '0' ]; then
 	exit 1
 fi
 
-fileIdArray=($($EXEC_IDENTIFY "$pngFile"))
+unset IFS; fileIdArray=( $($EXEC_IDENTIFY "$pngFile") ); IFS=$'\n\t'
 fileIdArrayLen=${#fileIdArray[@]}
 
 # Display error if file is invalid
@@ -169,6 +169,7 @@ echo
 # Generate high resolution icon
 if [ $pngWidth -ge 192 ]; then
 	generateFavicon 192
+	$EXEC_MV "$TMPDIR/favicon-192.png" $PWD
 	hiResIcon=true
 fi
 
