@@ -40,14 +40,17 @@ else
     CFLAGS := -Wall -m64 -O2 -fdiagnostics-color=always -DNDEBUG
 endif
 
-BIN_DIR := bin
-SRC_DIR := src
-OBJ_DIR := obj
-LIB_DIR := lib
-LIBDEVOPSBROKER_DIR := $(realpath $(CURDIR)/../../libdevopsbroker)
+BIN_DIR := bin/
+SRC_DIR := src/
+OBJ_DIR := obj/
+LIB_NAMES := -ldevopsbroker
 
-C_SOURCES := $(shell /bin/ls $(SRC_DIR)/*.c)
-C_BINARIES := $(subst src/,bin/,$(C_SOURCES:.c=))
+C_SOURCES := $(shell /usr/bin/find $(SRC_DIR) -type f -name "*.c")
+C_OBJECTS := $(subst src/,obj/,$(C_SOURCES:.c=.o))
+C_BINARIES := $(subst obj/,bin/,$(C_OBJECTS:.o=))
+
+ASM_SOURCES := $(shell /usr/bin/find $(SRC_DIR) -type f -name "*.asm")
+ASM_OBJECTS := $(subst src/,obj/,$(ASM_SOURCES:.asm=.o))
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Exports ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -67,14 +70,11 @@ clean:
 	$(call printInfo,Cleaning $(OBJ_DIR) directory)
 	/bin/rm -fv $(OBJ_DIR)/*
 	$(call printInfo,Cleaning $(BIN_DIR) directory)
-	/bin/rm -rfv $(BIN_DIR)/*
-	$(call printInfo,Cleaning $(LIB_DIR) directory)
-	/bin/rm -fv $(LIB_DIR)/*.a
+	/bin/rm -fv $(BIN_DIR)/*
 	echo
 
 prepare:
 	/bin/mkdir -p --mode=750 $(OBJ_DIR)
-	/bin/cp -ua $(LIBDEVOPSBROKER_DIR)/C/lib/libdevopsbroker.a $(LIB_DIR)/
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Object Files ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -90,53 +90,60 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.asm
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Utilities ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-bin/between: obj/between.o
+bin/between: $(OBJ_DIR)/between.o
 	$(call printInfo,Creating $(@) executable)
-	$(CC) $(LDFLAGS) $^ $(LIB_DIR)/libdevopsbroker.a -o $@
+	$(CC) $(LDFLAGS) $^ $(LIB_NAMES) -o $@
 	$(call printInfo,Testing $(@) executable)
 	test/testBetween.sh
 
-bin/convert-temp: obj/convert-temp.o obj/convert-temp.linux.o
+bin/convert-temp: $(OBJ_DIR)/convert-temp.o $(OBJ_DIR)/convert-temp.linux.o
 	$(call printInfo,Creating $(@) executable)
-	$(CC) $(LDFLAGS) $^ $(LIB_DIR)/libdevopsbroker.a -o $@
+	$(CC) $(LDFLAGS) $^ $(LIB_NAMES) -o $@
 	/usr/bin/strip -s $@
 
-bin/derivesubnet: obj/derivesubnet.o
+bin/derivesubnet: $(OBJ_DIR)/derivesubnet.o
 	$(call printInfo,Creating $(@) executable)
-	$(CC) $(LDFLAGS) $^ $(LIB_DIR)/libdevopsbroker.a -o $@
-
-bin/firechain: obj/firechain.o
-	$(call printInfo,Creating $(@) executable)
-	$(CC) $(LDFLAGS) $^ $(LIB_DIR)/libdevopsbroker.a -o $@
-
-bin/firelog: obj/firelog.o
-	$(call printInfo,Creating $(@) executable)
-	$(CC) $(LDFLAGS) $^ $(LIB_DIR)/libdevopsbroker.a -o $@
-
-bin/nettuner: obj/nettuner.o
-	$(call printInfo,Creating $(@) executable)
-	$(CC) $(LDFLAGS) $^ $(LIB_DIR)/libdevopsbroker.a -o $@
-
-bin/schedtuner: obj/schedtuner.o
-	$(call printInfo,Creating $(@) executable)
-	$(CC) $(LDFLAGS) $^ $(LIB_DIR)/libdevopsbroker.a -o $@
-
-bin/scriptinfo: obj/scriptinfo.o obj/scriptinfo.linux.o
-	$(call printInfo,Creating $(@) executable)
-	$(CC) $(LDFLAGS) $^ $(LIB_DIR)/libdevopsbroker.a -o $@
+	$(CC) $(LDFLAGS) $^ $(LIB_NAMES) -o $@
 	/usr/bin/strip -s $@
 
-bin/trim: obj/trim.o
+bin/firechain: $(OBJ_DIR)/firechain.o
 	$(call printInfo,Creating $(@) executable)
-	$(CC) $(LDFLAGS) $^ $(LIB_DIR)/libdevopsbroker.a -o $@
+	$(CC) $(LDFLAGS) $^ $(LIB_NAMES) -o $@
+	/usr/bin/strip -s $@
 
-bin/verifyclass: obj/verifyclass.o
+bin/firelog: $(OBJ_DIR)/firelog.o
 	$(call printInfo,Creating $(@) executable)
-	$(CC) $(LDFLAGS) $^ $(LIB_DIR)/libdevopsbroker.a -o $@
+	$(CC) $(LDFLAGS) $^ $(LIB_NAMES) -o $@
+	/usr/bin/strip -s $@
 
-bin/verifyip: obj/verifyip.o obj/verifyip.linux.o
+bin/nettuner: $(OBJ_DIR)/nettuner.o
 	$(call printInfo,Creating $(@) executable)
-	$(CC) $(LDFLAGS) $^ $(LIB_DIR)/libdevopsbroker.a -o $@
+	$(CC) $(LDFLAGS) $^ $(LIB_NAMES) -o $@
+	/usr/bin/strip -s $@
+
+bin/schedtuner: $(OBJ_DIR)/schedtuner.o
+	$(call printInfo,Creating $(@) executable)
+	$(CC) $(LDFLAGS) $^ $(LIB_NAMES) -o $@
+	/usr/bin/strip -s $@
+
+bin/scriptinfo: $(OBJ_DIR)/scriptinfo.o $(OBJ_DIR)/scriptinfo.linux.o
+	$(call printInfo,Creating $(@) executable)
+	$(CC) $(LDFLAGS) $^ $(LIB_NAMES) -o $@
+	/usr/bin/strip -s $@
+
+bin/trim: $(OBJ_DIR)/trim.o
+	$(call printInfo,Creating $(@) executable)
+	$(CC) $(LDFLAGS) $^ $(LIB_NAMES) -o $@
+	/usr/bin/strip -s $@
+
+bin/verifyclass: $(OBJ_DIR)/verifyclass.o
+	$(call printInfo,Creating $(@) executable)
+	$(CC) $(LDFLAGS) $^ $(LIB_NAMES) -o $@
+	/usr/bin/strip -s $@
+
+bin/verifyip: $(OBJ_DIR)/verifyip.o $(OBJ_DIR)/verifyip.linux.o
+	$(call printInfo,Creating $(@) executable)
+	$(CC) $(LDFLAGS) $^ $(LIB_NAMES) -o $@
 	/usr/bin/strip -s $@
 	$(call printInfo,Testing $(@) executable)
 	test/testVerifyIP.sh

@@ -180,16 +180,17 @@ static void processCmdLine(CmdLineParam *cmdLineParm, FirewallParams *firewallPa
 	c598a24c_append_string(&strBuilder, " 2>/dev/null");
 
 	Shell iptables;
-	char *rule;
 
 	f6843e7e_openShellForRead(&iptables, strBuilder.buffer);
 
+	char *rule;
 	int numBytes = c196bc72_populateLineBuffer(&lineBuffer, iptables.fd);
 	while (numBytes != END_OF_FILE) {
 		line = c196bc72_getLine(&lineBuffer);
 
 		while (line != NULL) {
-			rule = f6215943_copy(line->value, line->length);
+			rule = f668c4bd_malloc(line->length + 1);
+			f6215943_copyToBuffer(line->value, rule, line->length);
 			b196167f_add(&firewallParams->ruleList, rule);
 
 			line = c196bc72_getLine(&lineBuffer);

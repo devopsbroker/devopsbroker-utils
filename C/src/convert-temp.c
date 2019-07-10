@@ -54,7 +54,7 @@ typedef enum TemperatureType {
 
 // ════════════════════════════ Function Prototypes ═══════════════════════════
 
-static TemperatureType getTemperatureType(const char *argument);
+static TemperatureType getTemperatureType(char *argument);
 extern float b9ac2bf7_convertTemperature(char *inputTemp, TemperatureType fromTempType, TemperatureType toTempType);
 
 // Error Handling Functions
@@ -133,7 +133,7 @@ int main(int argc, char *argv[]) {
 
 // ═════════════════════════ Function Implementations ═════════════════════════
 
-TemperatureType getTemperatureType(const char *argument) {
+TemperatureType getTemperatureType(char *argument) {
 
 	if (f6215943_isEqual("celsius", argument)) {
 		return CELSIUS;
