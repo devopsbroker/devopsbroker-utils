@@ -3,7 +3,7 @@
 #
 # smbshare - DevOpsBroker utility for creating and managing Samba shares
 #
-# Copyright (C) 2018 Edward Smith <edwardsmith@devopsbroker.org>
+# Copyright (C) 2018-2020 Edward Smith <edwardsmith@devopsbroker.org>
 #
 # This program is free software: you can redistribute it and/or modify it under
 # the terms of the GNU General Public License as published by the Free Software
@@ -81,6 +81,7 @@ function showHelp() {
 ################################## Variables ##################################
 
 ## Bash exec variables
+EXEC_ADDUSER=/usr/sbin/adduser
 EXEC_GETENT=/usr/bin/getent
 EXEC_PDBEDIT=/usr/bin/pdbedit
 EXEC_SMBPASSWD=/usr/bin/smbpasswd
@@ -126,18 +127,29 @@ if [ $command == 'adduser' ]; then
 
 	errorMessage=$(isValidUsername 'smbshare' "$username")
 
-	# Display error if username parameter is missing or invalid
+	# If system user does not exist, offer to create one or else error
 	if [ "$errorMessage" != '0' ]; then
-		echo "$errorMessage"
-		echo
-		printUsage "smbshare adduser ${gold}[USER]"
+		echo "${bold}${yellow}System user '${red}$username${yellow}' does not exist. Create?${white}"
+		select confirmUserCreate in 'Yes' 'No'; do
+			if [ "$confirmUserCreate" == 'Yes' ]; then
+				printBanner "Creating user '$username'"
+				$EXEC_ADDUSER $username
+				echo
+				break;
+			elif [ "$confirmUserCreate" == 'No' ]; then
+				echo
+				echo "$errorMessage"
+				echo
+				printUsage "smbshare adduser ${gold}[USER]"
 
-		exit 1
-	fi
-
-	if [ ! -z "$($EXEC_PDBEDIT -u $username -d 0 2>/dev/null)" ]; then
-		printInfo "User '$username' already has a Samba password file entry"
-		exit 0
+				exit 1
+			fi
+		done
+	else
+		if [ ! -z "$($EXEC_PDBEDIT -u $username -d 0 2>/dev/null)" ]; then
+			printInfo "User '$username' already has a Samba password file entry"
+			exit 0
+		fi
 	fi
 fi
 
