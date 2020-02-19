@@ -130,6 +130,30 @@ function validateGCC() {
 	fi
 }
 
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     validateMalloc
+# Description:  Performs validation for the malloc command
+# -----------------------------------------------------------------------------
+function validateMalloc() {
+	# Display error if struct name parameter is missing
+	if [ -z "$snippetName" ]; then
+		printError $scriptName 'Missing struct name parameter'
+		echo
+		printUsage "$scriptName $command STRUCT_NAME MD5_HASH"
+
+		exit 1
+	fi
+
+	# Display error if MD5 hash parameter is missing
+	if [ -z "$md5Hash" ]; then
+		printError $scriptName 'Missing md5 hash parameter'
+		echo
+		printUsage "$scriptName $command $snippetName MD5_HASH"
+
+		exit 1
+	fi
+}
+
 ################################## Variables ##################################
 
 ## Options
@@ -137,9 +161,9 @@ command=${1:-}
 snippetName=${2:-}
 
 ## Variables
-validCommands=('asm' 'bash' 'gcc')
+validCommands=('asm' 'bash' 'gcc' 'malloc')
 
-usageMessage="$scriptName { asm | bash | gcc } SNIPPET_NAME"
+usageMessage="$scriptName { asm | bash | gcc | malloc } SNIPPET_NAME"
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -216,6 +240,52 @@ elif [ $command == 'gcc' ]; then
 	if [ $snippetName == 'customlib' ]; then
 		echo 'gcc foobar.c -Ldir -llib -o foobar'
 	fi
+
+elif [ $command == 'malloc' ]; then
+	md5Hash=${3:-}
+	validateMalloc
+	paramName=${snippetName,}
+
+	echo "/* ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯"
+	echo " * Function:    ${md5Hash}_create${snippetName}"
+	echo " * Description: Creates a ${snippetName} struct instance"
+	echo " *"
+	echo " * Returns:     A ${snippetName} struct instance"
+	echo " * ----------------------------------------------------------------------------"
+	echo " */"
+	echo "${snippetName} *${md5Hash}_create${snippetName}();"
+	echo
+	echo "/* ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯"
+	echo " * Function:    ${md5Hash}_destroy${snippetName}"
+	echo " * Description: Frees the memory allocated to the ${snippetName} struct pointer"
+	echo " *"
+	echo " * Parameters:"
+	echo " *   ${paramName}	A pointer to the ${snippetName} instance to destroy"
+	echo " * ----------------------------------------------------------------------------"
+	echo " */"
+	echo "void ${md5Hash}_destroy${snippetName}(${snippetName} *${paramName});"
+	echo
+	echo "/* ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯"
+	echo " * Function:    ${md5Hash}_cleanUp${snippetName}"
+	echo " * Description: Frees dynamically allocated memory within the ${snippetName} instance"
+	echo " *"
+	echo " * Parameters:"
+	echo " *   ${paramName}	A pointer to the ${snippetName} instance to clean up"
+	echo " * ----------------------------------------------------------------------------"
+	echo " */"
+	echo "void ${md5Hash}_cleanUp${snippetName}(${snippetName} *${paramName});"
+	echo
+	echo "/* ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯"
+	echo " * Function:    ${md5Hash}_init${snippetName}"
+	echo " * Description: Initializes an existing ${snippetName} struct"
+	echo " *"
+	echo " * Parameters:"
+	echo " *   ${paramName}	A pointer to the ${snippetName} instance to initalize"
+	echo " * ----------------------------------------------------------------------------"
+	echo " */"
+	echo "void ${md5Hash}_init${snippetName}(${snippetName} *${paramName});"
+	echo
+
 fi
 
 exit 0
