@@ -121,6 +121,10 @@ bin/nettuner: $(OBJ_DIR)/nettuner.o
 	$(CC) $(LDFLAGS) $^ $(LIB_NAMES) -o $@
 	/usr/bin/strip -s $@
 
+bin/odfgrep: $(OBJ_DIR)/odfgrep.o
+	$(call printInfo,Creating $(@) executable)
+	$(CC) $(LDFLAGS) $^ $(LIB_NAMES) -o $@
+
 bin/schedtuner: $(OBJ_DIR)/schedtuner.o
 	$(call printInfo,Creating $(@) executable)
 	$(CC) $(LDFLAGS) $^ $(LIB_NAMES) -o $@
@@ -155,6 +159,7 @@ install: default
 	/bin/cp -uv bin/firechain ../usr/local/sbin
 	/bin/cp -uv bin/firelog ../usr/local/bin
 	/bin/cp -uv bin/nettuner ../usr/local/bin
+	/bin/cp -uv bin/odfgrep ../usr/local/bin
 	/bin/cp -uv bin/schedtuner ../usr/local/sbin
 	/bin/cp -uv bin/scriptinfo ../usr/local/bin
 	/bin/cp -uv bin/trim ../usr/local/bin
@@ -177,6 +182,7 @@ ls:
 	echo "  bin/firechain"
 	echo "  bin/firelog"
 	echo "  bin/nettuner"
+	echo "  bin/odfgrep"
 	echo "  bin/schedtuner"
 	echo "  bin/scriptinfo"
 	echo "  bin/trim"
