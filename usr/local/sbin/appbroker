@@ -47,6 +47,13 @@ fi
 
 ${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m"}
 
+# Load /etc/devops/functions-io.conf if FUNC_IO_CONFIG is unset
+if [ -z "$FUNC_IO_CONFIG" ] && [ -f /etc/devops/functions-io.conf ]; then
+	source /etc/devops/functions-io.conf
+fi
+
+${FUNC_IO_CONFIG?"[1;91mCannot load '/etc/devops/functions-io.conf': No such file[0m"}
+
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Robustness ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 set -o errexit                 # Exit if any statement returns a non-true value
@@ -70,17 +77,20 @@ fi
 ## Bash exec variables
 EXEC_APT=/usr/bin/apt
 EXEC_APT_KEY=/usr/bin/apt-key
+EXEC_JAVA=/usr/bin/java
 EXEC_SHA256SUM=/usr/bin/sha256sum
+EXEC_UPDATE_ALTS=/usr/bin/update-alternatives
 
 ## Options
 command=${1:-}
 appName=${2:-}
+fileName=${3:-}
 
 ## Variables
 sudoCommands=('install')
 validCommands=(${sudoCommands[@]})
 
-usageMessage="$scriptName install APP_NAME"
+usageMessage="$scriptName install APP_NAME ${gold}[FILE]"
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -104,18 +114,31 @@ if [ $command == 'install' ]; then
 	if [ -z "$appName" ]; then
 		printError $scriptName 'Missing application name parameter'
 		echo
-		printUsage "$scriptName $command { atom | google-cloud-sdk }"
+		printUsage "$scriptName $command { atom | google-cloud-sdk | jdk | unifi } ${gold}[FILE]"
 
 		exit 1
 	fi
 
 	# Display error if application name parameter is invalid
-	if [[ ! "$appName" =~ ^(atom|google-cloud-sdk)$ ]]; then
+	if [[ ! "$appName" =~ ^(atom|google-cloud-sdk|jdk|unifi)$ ]]; then
 		printError $scriptName "Invalid application name: '$appName'"
 		echo
-		printUsage "$scriptName $command { atom | google-cloud-sdk }"
+		printUsage "$scriptName $command { atom | google-cloud-sdk | jdk | unifi } ${gold}[FILE]"
 
 		exit 1
+	fi
+
+	if [[ "$appName" =~ ^(google-cloud-sdk|jdk)$ ]]; then
+		errorMessage=$(isValidFile $scriptName "$fileName")
+
+		# Display error if file parameter is missing or invalid
+		if [ "$errorMessage" != '0' ]; then
+			echo "$errorMessage"
+			echo
+			printUsage "$scriptName $command $appName ${gold}FILE"
+
+			exit 1
+		fi
 	fi
 fi
 
@@ -189,6 +212,86 @@ if [ $command == 'install' ]; then
 
 			$HOME/bin/gcloud init
 		fi
+
+	elif [ $appName == 'jdk' ]; then
+		# Extract JDK file to the /opt directory
+		if [ "$PWD" != '/opt' ]; then
+			printInfo "Extracting $fileName to /opt"
+			$EXEC_TAR xvzf "$fileName" --directory="/opt"
+			cd /opt
+		else
+			printInfo "Extracting $fileName"
+			$EXEC_TAR xvzf "$fileName"
+		fi
+		echo
+
+		# Find which JDK was installed, in case there are multiples
+		jdkArray=( $($EXEC_FIND $PWD -maxdepth 1 -type d -name "jdk*") )
+
+		if [ "${#jdkArray[@]}" -gt 1 ]; then
+			echo "${bold}${yellow}Which JDK version are you installing?${white}"
+			select jdkDir in "${jdkArray[@]}"; do
+				if [ "${#jdkDir}" -ne 0 ]; then
+					echo
+					break;
+				fi
+			done
+		else
+			jdkDir="${jdkArray[0]}"
+		fi
+
+		# Set JDK directory permissions and ownership
+		printInfo "Setting directory permssions and ownership for $jdkDir"
+		$EXEC_CHMOD -R 755 "$jdkDir"
+		$EXEC_CHOWN -R root:users "$jdkDir"
+		echo
+
+		# Update the /usr/bin/java symlink
+		printInfo "Updating /usr/bin/java"
+		$EXEC_UPDATE_ALTS --install /usr/bin/java java "$jdkDir"/bin/java 100
+		$EXEC_UPDATE_ALTS --display java
+		echo
+
+		# Update JAVA_HOME and JRE_HOME environment variables
+		printInfo "Updating JAVA_HOME and JRE_HOME environment variables"
+		$EXEC_SED -i '/^JAVA_HOME/d' /etc/environment
+		$EXEC_SED -i '/^JRE_HOME/d' /etc/environment
+
+		echo -e "\nJAVA_HOME=$jdkDir\nJRE_HOME=$jdkDir/jre" >> /etc/environment
+		echo
+
+		# Print java version
+		$EXEC_JAVA -version
+		echo
+
+		printNotice $scriptName "Please run 'source /etc/environment' to update Java environment variables"
+
+	elif [ $appName == 'unifi' ]; then
+		# Add a new APT source list for ubiquiti, if necessary
+		if [ ! -f /etc/apt/sources.list.d/100-ubnt-unifi.list ]; then
+			printInfo 'Adding ubiquiti APT source list file'
+			echo 'deb https://www.ui.com/downloads/unifi/debian stable ubiquiti' | $EXEC_TEE /etc/apt/sources.list.d/100-ubnt-unifi.list
+
+			if [ ! -f /etc/apt/trusted.gpg.d/unifi-repo.gpg ]; then
+				printInfo 'Adding ubiquiti GPG keys'
+				$EXEC_WGET -qO /etc/apt/trusted.gpg.d/unifi-repo.gpg https://dl.ui.com/unifi/unifi-repo.gpg
+			fi
+			echo
+		fi
+
+		# Add a new APT source list for mongodb, if necessary
+		if [ ! -f /etc/apt/sources.list.d/mongodb-org-3.4.list ]; then
+			printInfo 'Adding mongodb APT source list file'
+			echo 'deb https://repo.mongodb.org/apt/ubuntu xenial/mongodb-org/3.4 multiverse' | $EXEC_TEE /etc/apt/sources.list.d/mongodb-org-3.4.list
+
+			printInfo 'Adding mongodb GPG keys'
+			$EXEC_WGET -qO - https://www.mongodb.org/static/pgp/server-3.4.asc | $EXEC_APT_KEY add -
+			echo
+		fi
+
+		# Install unifi
+		printInfo 'Installing unifi'
+		$EXEC_APT update && $EXEC_APT --yes --no-install-recommends install unifi
 	fi
 fi
 
