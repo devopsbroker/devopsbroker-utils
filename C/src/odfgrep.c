@@ -24,18 +24,29 @@
 
 // ════════════════════════════ Feature Test Macros ═══════════════════════════
 
-#define _DEFAULT_SOURCE
+#define _GNU_SOURCE
 
 // ═════════════════════════════════ Includes ═════════════════════════════════
 
+#include <stdio.h>
 #include <stdbool.h>
 
-#include <assert.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
+#include <assert.h>
+#include <pthread.h>
+
+#include "org/devopsbroker/adt/unsignedintarray.h"
+#include "org/devopsbroker/compress/ziparchive.h"
 #include "org/devopsbroker/fs/directory.h"
+#include "org/devopsbroker/io/async.h"
 #include "org/devopsbroker/lang/error.h"
 #include "org/devopsbroker/lang/string.h"
 #include "org/devopsbroker/lang/stringbuilder.h"
+#include "org/devopsbroker/memory/pagepool.h"
+#include "org/devopsbroker/system/linux.h"
 #include "org/devopsbroker/terminal/commandline.h"
 
 // ═══════════════════════════════ Preprocessor ═══════════════════════════════
@@ -57,6 +68,8 @@ static_assert(sizeof(SearchParams) == 32, "Check your assumptions");
 
 
 // ════════════════════════════ Function Prototypes ═══════════════════════════
+
+static void processODFFile(AIOContext *aioContext, char *filename);
 
 static bool findODFFiles(char *filename);
 
@@ -91,16 +104,42 @@ int main(int argc, char *argv[]) {
 	d0059b5b_initFilePathList(&filePathList);
 	d0059b5b_find(&filePathList, &dirPath, findODFFiles);
 
-	d0059b5b_printFilePathList(&filePathList);
+	if (filePathList.length > 0) {
+		AIOContext aioContext;
+		char *filename;
+
+		f1207515_initAIOContext(&aioContext, 16);
+
+		for (uint32_t i=0; i < filePathList.length; i++) {
+			filename = filePathList.values[i];
+			processODFFile(&aioContext, filename);
+		}
+
+		f1207515_printContext(&aioContext);
+		f1207515_cleanUpAIOContext(&aioContext);
+	}
 
 	d0059b5b_cleanUpDirPath(&dirPath);
 	d0059b5b_cleanUpFilePathList(&filePathList);
+	f502a409_destroyPagePool(true);
 
 	// Exit with success
 	exit(EXIT_SUCCESS);
 }
 
 // ═════════════════════════ Function Implementations ═════════════════════════
+
+static void processODFFile(AIOContext *aioContext, char *filename) {
+	ZipArchive zipArchive;
+
+	// 1. Initialize ZipArchive
+	ce667b0d_initZipArchive(&zipArchive, aioContext, filename);
+	zipArchive.outputDir = "/tmp/unzip/";
+
+	ce667b0d_unzip(&zipArchive);
+
+	ce667b0d_cleanUpZipArchive(&zipArchive);
+}
 
 static bool findODFFiles(char *filename) {
 	char *extension = f6215943_findLastChar(filename, '.');
