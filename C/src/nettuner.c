@@ -86,10 +86,12 @@
 
 // ═══════════════════════════════ Preprocessor ═══════════════════════════════
 
-#define DEFAULT_LATENCY 0.1f
+#define DEFAULT_LATENCY      0.1f
 
-#define ONE_MEGABIT_BYTES 125000
-#define ONE_GIGABYTE 1073741824
+#define INT_COALESCING_BASE  1000000
+
+#define ONE_MEGABIT_BYTES    125000
+#define ONE_GIGABYTE         1073741824
 
 #define USAGE_MSG "nettuner " ANSI_GOLD "{ -d dlSpeed | -u ulSpeed | -s speed | -l latency | -g type | -h }" ANSI_YELLOW " IF_NAME"
 
@@ -107,6 +109,7 @@ typedef struct TuningParams {
 	uint32_t ramInGB;
 	bool     generateNetworkdScript;
 	bool     generateNetworkManagerScript;
+	bool     isEthernet;
 } TuningParams;
 
 static_assert(sizeof(TuningParams) == 48, "Check your assumptions");
@@ -240,6 +243,8 @@ static void processCmdLine(CmdLineParam *cmdLineParm, TuningParams *tuningParams
 	if (!tuningParams->generateNetworkdScript && !tuningParams->generateNetworkManagerScript) {
 		tuningParams->generateNetworkManagerScript = true;
 	}
+
+	tuningParams->isEthernet = (tuningParams->deviceName[0] == 'e');
 }
 
 // ══════════════════════════════════ main() ══════════════════════════════════
@@ -261,7 +266,11 @@ int main(int argc, char *argv[]) {
 	d3843373_initEthernetRequest(&ethRequest, tuningParams.deviceName);
 
 	a34d4619_open(&ipv4Socket, IPV4_SOCKET_UDP);
-	d3843373_getEthernetStatus(&ethDevice, &ethRequest, &ipv4Socket);
+
+	if (tuningParams.isEthernet) {
+		d3843373_getEthernetStatus(&ethDevice, &ethRequest, &ipv4Socket);
+	}
+
 	d3843373_getEthernetMTU(&ethDevice, &ethRequest, &ipv4Socket);
 	a34d4619_close(&ipv4Socket);
 
@@ -294,13 +303,13 @@ static void calcEthtoolSettings(EthtoolSettings *ethtoolSettings, TuningCalcs *t
 	ethtoolSettings->rxFrameRingBufferSize = 32;
 	ethtoolSettings->txFrameRingBufferSize = 32;
 
-	ethtoolSettings->rxIntCoalescing = 5000000 / tuningCalcs->dlFramesPerSecond;
+	ethtoolSettings->rxIntCoalescing = (5 * INT_COALESCING_BASE) / tuningCalcs->dlFramesPerSecond;
 	ethtoolSettings->rxIntCoalescing = ((ethtoolSettings->rxIntCoalescing + 7) >> 3) << 3;
-	ethtoolSettings->rxIntCoalescing = f45efac2_range(ethtoolSettings->rxIntCoalescing, 8, 2000);
+	ethtoolSettings->rxIntCoalescing = f45efac2_range(ethtoolSettings->rxIntCoalescing, 32, 10000);
 
-	ethtoolSettings->txIntCoalescing = 200000 / tuningCalcs->ulFramesPerSecond;
+	ethtoolSettings->txIntCoalescing = INT_COALESCING_BASE / tuningCalcs->ulFramesPerSecond;
 	ethtoolSettings->txIntCoalescing = ((ethtoolSettings->txIntCoalescing + 7) >> 3) << 3;
-	ethtoolSettings->txIntCoalescing = f45efac2_range(ethtoolSettings->txIntCoalescing, 8, 2000);
+	ethtoolSettings->txIntCoalescing = f45efac2_range(ethtoolSettings->txIntCoalescing, 32, 10000);
 
 	ethtoolSettings->txqueuelen = (tuningCalcs->ulFramesPerSecond * tuningParams->acceptableLatency);
 	ethtoolSettings->txqueuelen = ((ethtoolSettings->txqueuelen + 7) >> 3) << 3;
