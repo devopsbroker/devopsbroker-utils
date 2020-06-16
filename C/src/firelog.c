@@ -24,7 +24,7 @@
 
 // ════════════════════════════ Feature Test Macros ═══════════════════════════
 
-#define _DEFAULT_SOURCE
+#define _GNU_SOURCE
 
 // ═════════════════════════════════ Includes ═════════════════════════════════
 
@@ -152,7 +152,7 @@ int main(int argc, char *argv[]) {
 			b45c9f7e_destroyLogLine(listEntry);
 		}
 
-		b196167f_destroyListArray(inputLogLineList);
+		b196167f_destroyListArray(inputLogLineList, NULL);
 		printf("\n");
 	}
 
@@ -176,7 +176,7 @@ int main(int argc, char *argv[]) {
 			b45c9f7e_destroyLogLine(listEntry);
 		}
 
-		b196167f_destroyListArray(outputLogLineList);
+		b196167f_destroyListArray(outputLogLineList, NULL);
 		printf("\n");
 	}
 
