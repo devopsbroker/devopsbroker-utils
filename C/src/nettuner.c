@@ -533,6 +533,8 @@ static void generateNetworkManagerTuningScript(TuningParams *tuningParams, Ethto
 	puts(  "#");
 	puts(  "# -----------------------------------------------------------------------------");
 	printf("# Configuration file for optimizing %s:\n", tuningParams->deviceName);
+	printf("#   o Download Speed = %.2f\n", tuningParams->downloadSpeed);
+	printf("#   o Upload Speed = %.2f\n", tuningParams->uploadSpeed);
 	printf("#   o TX Queue Length = %u\n", ethtoolSettings->txqueuelen);
 	printf("#   o RX Interrput Coalescing = %u\n", ethtoolSettings->rxIntCoalescing);
 	printf("#   o TX Interrput Coalescing = %u\n", ethtoolSettings->txIntCoalescing);
