@@ -93,12 +93,13 @@
 #define ONE_MEGABIT_BYTES    125000
 #define ONE_GIGABYTE         1073741824
 
-#define USAGE_MSG "nettuner " ANSI_GOLD "{ -d dlSpeed | -u ulSpeed | -s speed | -l latency | -g type | -h }" ANSI_YELLOW " IF_NAME"
+#define USAGE_MSG "nettuner " ANSI_GOLD "{ -d dlSpeed | -u ulSpeed | -s speed | -l latency | -m mac | -g type | -h }" ANSI_YELLOW " IF_NAME"
 
 // ═════════════════════════════════ Typedefs ═════════════════════════════════
 
 typedef struct TuningParams {
-	char*    deviceName;
+	char    *deviceName;
+	char    *macAddress;
 	uint32_t levelOneDCacheSize;
 	uint32_t numCpus;
 	uint32_t pageSize;
@@ -112,7 +113,7 @@ typedef struct TuningParams {
 	bool     isEthernet;
 } TuningParams;
 
-static_assert(sizeof(TuningParams) == 48, "Check your assumptions");
+static_assert(sizeof(TuningParams) == 56, "Check your assumptions");
 
 typedef struct TuningCalcs {
 	uint32_t tcp_mss;             // TCP Maximum Segment Size
@@ -176,7 +177,7 @@ static void setTuningParams(TuningParams *tuningParams, Ethernet *ethDevice);
 
 static void generateNetworkdTuningScript(char * deviceName, EthtoolSettings *ethtoolSettings, SysctlSettings *sysctlSettings);
 
-static void generateNetworkManagerTuningScript(char * deviceName, EthtoolSettings *ethtoolSettings, SysctlSettings *sysctlSettings);
+static void generateNetworkManagerTuningScript(TuningParams *tuningParams, EthtoolSettings *ethtoolSettings, SysctlSettings *sysctlSettings);
 
 static void printHelp();
 
@@ -209,6 +210,8 @@ static void processCmdLine(CmdLineParam *cmdLineParm, TuningParams *tuningParams
 				tuningParams->uploadSpeed = tuningParams->downloadSpeed;
 			} else if (argv[i][1] == 'l') {
 				tuningParams->acceptableLatency = d7ad7024_getFloat(cmdLineParm, "acceptable latency", i++);
+			} else if (argv[i][1] == 'm') {
+				tuningParams->macAddress = d7ad7024_getString(cmdLineParm, "MAC address", i++);
 			} else if (argv[i][1] == 'g') {
 				char *tuningScript = d7ad7024_getString(cmdLineParm, "tuning script type", i++);
 
@@ -242,6 +245,12 @@ static void processCmdLine(CmdLineParam *cmdLineParm, TuningParams *tuningParams
 
 	if (!tuningParams->generateNetworkdScript && !tuningParams->generateNetworkManagerScript) {
 		tuningParams->generateNetworkManagerScript = true;
+	}
+
+	if (tuningParams->generateNetworkManagerScript && tuningParams->macAddress == NULL) {
+		c7c88e52_missingParam("MAC address");
+		c7c88e52_printUsage(USAGE_MSG);
+		exit(EXIT_FAILURE);
 	}
 
 	tuningParams->isEthernet = (tuningParams->deviceName[0] == 'e');
@@ -287,7 +296,7 @@ int main(int argc, char *argv[]) {
 	if (tuningParams.generateNetworkdScript) {
 		generateNetworkdTuningScript(tuningParams.deviceName, &ethtoolSettings, &sysctlSettings);
 	} else if (tuningParams.generateNetworkManagerScript) {
-		generateNetworkManagerTuningScript(tuningParams.deviceName, &ethtoolSettings, &sysctlSettings);
+		generateNetworkManagerTuningScript(&tuningParams, &ethtoolSettings, &sysctlSettings);
 	} else {
 		puts("No tuning script generation specified");
 	}
@@ -496,16 +505,16 @@ static void generateNetworkdTuningScript(char * deviceName, EthtoolSettings *eth
 	puts(  "exit 0\n");
 }
 
-static void generateNetworkManagerTuningScript(char * deviceName, EthtoolSettings *ethtoolSettings, SysctlSettings *sysctlSettings) {
+static void generateNetworkManagerTuningScript(TuningParams *tuningParams, EthtoolSettings *ethtoolSettings, SysctlSettings *sysctlSettings) {
 	Time time;
 	bool isEthernet;
 
 	a66923ff_initTime(&time, a66923ff_getTime());
-	isEthernet = (deviceName[0] == 'e');
+	isEthernet = (tuningParams->deviceName[0] == 'e');
 
 	puts(  "#!/bin/bash");
 	puts(  "#");
-	printf("# tune-%s - DevOpsBroker network interface tuning script\n", deviceName);
+	printf("# tune-%s - DevOpsBroker network interface tuning script\n", tuningParams->deviceName);
 	puts(  "#");
 	printf("# Copyright (C) %d Edward Smith <edwardsmith@devopsbroker.org>\n", a66923ff_getYear(&time));
 	puts(  "#");
@@ -523,7 +532,7 @@ static void generateNetworkManagerTuningScript(char * deviceName, EthtoolSetting
 	puts(  "# this program.  If not, see <http://www.gnu.org/licenses/>.");
 	puts(  "#");
 	puts(  "# -----------------------------------------------------------------------------");
-	printf("# Configuration file for optimizing %s:\n", deviceName);
+	printf("# Configuration file for optimizing %s:\n", tuningParams->deviceName);
 	printf("#   o TX Queue Length = %u\n", ethtoolSettings->txqueuelen);
 	printf("#   o RX Interrput Coalescing = %u\n", ethtoolSettings->rxIntCoalescing);
 	printf("#   o TX Interrput Coalescing = %u\n", ethtoolSettings->txIntCoalescing);
@@ -537,34 +546,38 @@ static void generateNetworkManagerTuningScript(char * deviceName, EthtoolSetting
 	puts(  "ACTION=\"$2\"\n");
 
 	puts(  "if [ -z \"$IFACE\" ] && [ -z \"$ACTION\" ]; then");
-	printf("	IFACE='%s'\n", deviceName);
+	printf("	IFACE='%s'\n", tuningParams->deviceName);
 	puts(  "	ACTION='up'");
 	puts(  "fi\n");
 
+	puts(  "## Variables");
+	printf("IP4_GATEWAY=\"$(/usr/sbin/ip route show 0.0.0.0/0 dev %s)\"\n", tuningParams->deviceName);
+	puts(  "MAC_ADDR=\"$(/usr/sbin/arp -n -a $IP4_GATEWAY | /usr/bin/awk '{print $4}')\"\n");
+
 	puts(  "################################### Actions ###################################\n");
 
-	printf("/usr/bin/logger -p syslog.notice -i Called /etc/NetworkManager/dispatcher.d/tune-%s with interface \"$IFACE\" and action \"$ACTION\";\n\n", deviceName);
+	printf("/usr/bin/logger -p syslog.notice -i Called /etc/NetworkManager/dispatcher.d/tune-%s with interface \"$IFACE\" and action \"$ACTION\";\n\n", tuningParams->deviceName);
 
-	printf("if [ \"$IFACE\" == '%s' ] && [ \"$ACTION\" == 'up' ]; then\n", deviceName);
+	printf("if [ \"$IFACE\" == '%s' ] && [ \"$ACTION\" == 'up' ] && [ \"$MAC_ADDR\" == '%s' ]; then\n", tuningParams->deviceName, tuningParams->macAddress);
 	puts(  "	# Optimize TX Queue Length");
-	printf("	/usr/sbin/ip link set %s txqueuelen %u\n\n", deviceName, ethtoolSettings->txqueuelen);
+	printf("	/usr/sbin/ip link set %s txqueuelen %u\n\n", tuningParams->deviceName, ethtoolSettings->txqueuelen);
 
 	if (isEthernet) {
 		puts(  "	# Optimize RX and TX Frame Ring Buffers");
-		printf("	/usr/sbin/ethtool -G %s rx %u tx %u\n\n", deviceName, ethtoolSettings->rxFrameRingBufferSize, ethtoolSettings->txFrameRingBufferSize);
+		printf("	/usr/sbin/ethtool -G %s rx %u tx %u\n\n", tuningParams->deviceName, ethtoolSettings->rxFrameRingBufferSize, ethtoolSettings->txFrameRingBufferSize);
 
 		puts(  "	# Enable Flow Control");
-		printf("	/usr/sbin/ethtool -A %s rx on tx on\n\n", deviceName);
+		printf("	/usr/sbin/ethtool -A %s rx on tx on\n\n", tuningParams->deviceName);
 
 		puts(  "	# Enable IPv4/IPv6 RX and TX checksum offload");
-		printf("	/usr/sbin/ethtool -K %s tx-checksum-ipv4 on tx-checksum-ipv6 on\n\n", deviceName);
+		printf("	/usr/sbin/ethtool -K %s tx-checksum-ipv4 on tx-checksum-ipv6 on\n\n", tuningParams->deviceName);
 
 		puts(  "	# Disable TSO/USO/LSO/GSO Processing");
-		printf("	/usr/sbin/ethtool -K %s sg off tso off ufo off gso off gro off lro off\n\n", deviceName);
+		printf("	/usr/sbin/ethtool -K %s sg off tso off ufo off gso off gro off lro off\n\n", tuningParams->deviceName);
 
 		puts(  "	# Configure RX and TX Interrput Coalescing");
-		printf("	/usr/sbin/ethtool -C %s adaptive-rx off rx-usecs %u rx-frames 0\n", deviceName, ethtoolSettings->rxIntCoalescing);
-		printf("	/usr/sbin/ethtool -C %s adaptive-tx off tx-usecs %u tx-frames 0\n\n", deviceName, ethtoolSettings->txIntCoalescing);
+		printf("	/usr/sbin/ethtool -C %s adaptive-rx off rx-usecs %u rx-frames 0\n", tuningParams->deviceName, ethtoolSettings->rxIntCoalescing);
+		printf("	/usr/sbin/ethtool -C %s adaptive-tx off tx-usecs %u tx-frames 0\n\n", tuningParams->deviceName, ethtoolSettings->txIntCoalescing);
 	}
 
 	puts(  "	# Optimize Maximum Number of Queued Incoming Packets");
@@ -615,6 +628,7 @@ static void printHelp() {
 	puts(ANSI_BOLD ANSI_YELLOW "  -u\t" ANSI_ROMANTIC "Specify the upload speed");
 	puts(ANSI_BOLD ANSI_YELLOW "  -s\t" ANSI_ROMANTIC "Specify both the upload and download speed");
 	puts(ANSI_BOLD ANSI_YELLOW "  -l\t" ANSI_ROMANTIC "Specify the acceptable latency");
+	puts(ANSI_BOLD ANSI_YELLOW "  -m\t" ANSI_ROMANTIC "Specify the MAC address of the IPv4 gateway");
 	puts(ANSI_BOLD ANSI_YELLOW "  -g\t" ANSI_ROMANTIC "Generate tuning script" ANSI_BOLD ANSI_YELLOW " { nm | networkd }");
 	puts(ANSI_BOLD ANSI_YELLOW "  -h\t" ANSI_ROMANTIC "Print this help message\n");
 }
