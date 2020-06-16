@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # hypotenuse - DevOpsBroker utility for calculating the hypotenuse of a right

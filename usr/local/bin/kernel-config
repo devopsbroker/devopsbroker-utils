@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # kernel-config - DevOpsBroker script to display the current Linux kernel configuration

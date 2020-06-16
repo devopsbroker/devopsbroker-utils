@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # lwp - DevOpsBroker utility for monitoring and retrieving Linux threads information
@@ -104,8 +104,8 @@ function printLine() {
 ################################## Variables ##################################
 
 ## Bash exec variables
-EXEC_PIDOF=/bin/pidof
-EXEC_PS=/bin/ps
+EXEC_PIDOF=/usr/bin/pidof
+EXEC_PS=/usr/bin/ps
 
 ## Options
 command=${1:-'stat'}
@@ -116,7 +116,8 @@ validCommands=('ids' 'list' 'stat')
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 # Display error if invalid command
-if [ $(containsElement "$command" "${validCommands[@]}") != '0' ]; then
+containsElement "$command" "${validCommands[@]}"
+if [ $? -eq 1 ]; then
 	printError 'lwp' "Invalid command: $command"
 	echo
 	printUsage 'lwp { ids | list | stat }'

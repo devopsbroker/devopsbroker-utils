@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # disableJournal - DevOpsBroker script for disabling the ext3/ext4 journal on the given mount point
@@ -72,10 +72,10 @@ fi
 ################################## Variables ##################################
 
 ## Bash exec variables
-EXEC_DEBUGFS=/sbin/debugfs
-EXEC_FINDMNT=/bin/findmnt
-EXEC_FSCK=/sbin/fsck
-EXEC_TUNE2FS=/sbin/tune2fs
+EXEC_DEBUGFS=/usr/sbin/debugfs
+EXEC_FINDMNT=/usr/bin/findmnt
+EXEC_FSCK=/usr/sbin/fsck
+EXEC_TUNE2FS=/usr/sbin/tune2fs
 
 ## Options
 mountPoint="$1"

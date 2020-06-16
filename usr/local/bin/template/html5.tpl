@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # html5.tpl - DevOpsBroker template script for generating blank HTML5 files
@@ -27,7 +27,7 @@
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Template ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 ## Template
-/bin/cat << EOF
+/usr/bin/cat << EOF
 <!DOCTYPE html>
 
 <html>

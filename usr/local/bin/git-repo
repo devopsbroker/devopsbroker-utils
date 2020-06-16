@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # git-repo - DevOpsBroker utility for managing Git repositories
@@ -518,12 +518,16 @@ if [ "$command" == 'help' ]; then
 fi
 
 # Display error if invalid command
-if [ $command ] && [ $(containsElement "$command" "${validCommands[@]}") != '0' ]; then
-	printError $scriptName "Invalid command: '$command'"
-	echo
-	printUsage "$scriptName ${gold}[help]${yellow} COMMAND ${gold}[OPTION...]"
+if [ "$command" ]; then
+	containsElement "$command" "${validCommands[@]}"
 
-	exit 1
+	if [ $? -eq 1 ]; then
+		printError $scriptName "Invalid command: '$command'"
+		echo
+		printUsage "$scriptName ${gold}[help]${yellow} COMMAND ${gold}[OPTION...]"
+
+		exit 1
+	fi
 fi
 
 if [ "$showCommandHelp" == 'true' ]; then
@@ -532,7 +536,8 @@ if [ "$showCommandHelp" == 'true' ]; then
 fi
 
 # Display error if not within a Git repository
-if [ $(containsElement "$command" "${repoCommands[@]}") == '0' ] && \
+containsElement "$command" "${repoCommands[@]}"
+if [ $? -eq 0 ] && \
 	[ "$($EXEC_GIT rev-parse --is-inside-work-tree 2>/dev/null)" != 'true' ]; then
 		printError 'git-repo' "$PWD is not within a Git repository"
 		echo

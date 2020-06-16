@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # certauth - DevOpsBroker script for creating and managing a local CA
@@ -93,7 +93,8 @@ if [ -z "$command" ]; then
 fi
 
 # Ensure the first parameter is a valid command
-if [ $(containsElement "$command" "${validCommands[@]}") != '0' ]; then
+containsElement "$command" "${validCommands[@]}"
+if [ $? -eq 1 ]; then
 	printError 'certauth' "Invalid command: '$command'"
 	echo
 	printUsage 'certauth { create | fingerprint | gencsr | genrsa | inspect | signcsr | verifycrt | verifyssl }'
@@ -102,8 +103,9 @@ if [ $(containsElement "$command" "${validCommands[@]}") != '0' ]; then
 fi
 
 # Display error if incorrect usage of sudo
-if [ $(containsElement "$command" "${sudoCommands[@]}") == '0' ]; then
- 	if [ "$USER" != 'root' ]; then
+containsElement "$command" "${sudoCommands[@]}"
+if [ $? -eq 0 ]; then
+	if [ "$USER" != 'root' ]; then
 		printError 'certauth' 'Permission denied (you must be root)'
 		exit 1
 	fi
@@ -289,12 +291,12 @@ if [ "$command" == 'gencsr' ]; then
 			printBanner "Generate RSA private key for '$domainName' domain"
 
 			$EXEC_OPENSSL genrsa -out "$dirName/$keyFile" -rand /dev/urandom 2048
-			/bin/chmod 400 "$dirName/$keyFile"
+			$EXEC_CHMOD 400 "$dirName/$keyFile"
 
 			printBanner "Extract RSA public key from private key '$keyFile'"
 
 			$EXEC_OPENSSL rsa -in "$dirName/$keyFile" -pubout -out "$dirName/${domainName}.pub"
-			/bin/chmod 400 "$dirName/${domainName}.pub"
+			$EXEC_CHMOD 400 "$dirName/${domainName}.pub"
 		fi
 
 		printBanner "Generate Certificate Signing Request for '$domainName' domain"
@@ -303,7 +305,7 @@ if [ "$command" == 'gencsr' ]; then
 			-out "$dirName/$csrFile" -config /etc/ssl/req.conf
 	fi
 
-	/bin/chmod 400 "$dirName/$csrFile"
+	$EXEC_CHMOD 400 "$dirName/$csrFile"
 
 elif [ "$command" == 'inspect' ]; then
 
@@ -368,8 +370,8 @@ elif [ "$command" == 'signcsr' ]; then
 		-out "$CRT_FILE"
 
 	if [ -f "$CRT_FILE" ]; then
-		/bin/chown $SUDO_USER:$SUDO_USER "$CRT_FILE"
-		/bin/chmod 400 "$CRT_FILE"
+		$EXEC_CHOWN $SUDO_USER:$SUDO_USER "$CRT_FILE"
+		$EXEC_CHMOD 400 "$CRT_FILE"
 	fi
 
 elif [ "$command" == 'verifycrt' ]; then
@@ -408,7 +410,7 @@ elif [ "$command" == 'genrsa' ]; then
 		printBanner "Generate RSA private key for '$domainName' domain"
 
 		$EXEC_OPENSSL genrsa -out "$dirName/$keyFile" -rand /dev/urandom 2048
-		/bin/chmod 400 "$dirName/$keyFile"
+		$EXEC_CHMOD 400 "$dirName/$keyFile"
 	else
 		printInfo "RSA private key '$keyFile' already exists: skipping private key generation"
 	fi
@@ -417,7 +419,7 @@ elif [ "$command" == 'genrsa' ]; then
 		printBanner "Extract RSA public key from private key '$keyFile'"
 
 		$EXEC_OPENSSL rsa -in "$dirName/$keyFile" -pubout -out "$dirName/${domainName}.pub"
-		/bin/chmod 400 "$dirName/${domainName}.pub"
+		$EXEC_CHMOD 400 "$dirName/${domainName}.pub"
 	else
 		printInfo "RSA public key '${domainName}.pub' already exists: skipping public key extraction"
 	fi
@@ -446,28 +448,28 @@ elif [ "$command" == 'create' ]; then
 
 	printInfo "Creating signed certificate database"
 	$EXEC_TOUCH "$dirName"/index.txt
-	/bin/chmod 644 "$dirName"/index.txt
+	$EXEC_CHMOD 644 "$dirName"/index.txt
 
 	printInfo "Copying default 'ca.conf' configuration"
 	$EXEC_CP /etc/ssl/ca.conf "$dirName"
-	/bin/chmod 600 "$dirName"/ca.conf
+	$EXEC_CHMOD 600 "$dirName"/ca.conf
 
 	printInfo "Seeding private RANDFILE"
 	$EXEC_DD if=/dev/urandom of="$dirName"/private/.rand bs=256 count=1
-	/bin/chmod 600 "$dirName"/private/.rand
+	$EXEC_CHMOD 600 "$dirName"/private/.rand
 
 	echo
 
 	printInfo "Generating Certificate Authority RSA key"
 	$EXEC_OPENSSL genrsa -out "$dirName"/private/$keyFile -rand /dev/urandom 2048
-	/bin/chmod 400 "$dirName"/private/$keyFile
+	$EXEC_CHMOD 400 "$dirName"/private/$keyFile
 
 	echo
 
 	printInfo "Generating Certificate Authority CSR"
 	$EXEC_OPENSSL req -new -key "$dirName"/private/$keyFile \
 		-out "$dirName"/$csrFile -config "$dirName"/ca.conf
-	/bin/chmod 400 "$dirName"/$csrFile
+	$EXEC_CHMOD 400 "$dirName"/$csrFile
 
 	echo
 
@@ -475,7 +477,7 @@ elif [ "$command" == 'create' ]; then
 	$EXEC_OPENSSL ca -create_serial -in "$dirName"/$csrFile \
 		-out "$dirName"/$crtFile -keyfile "$dirName"/private/$keyFile \
 		-selfsign -config "$dirName"/ca.conf -extensions ca_cert
-	/bin/chmod 400 "$dirName"/$crtFile
+	$EXEC_CHMOD 400 "$dirName"/$crtFile
 
 fi
 

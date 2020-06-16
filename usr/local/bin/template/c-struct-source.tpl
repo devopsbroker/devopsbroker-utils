@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # c-struct-source.tpl - DevOpsBroker template script for generating C struct source files
@@ -101,7 +101,7 @@ filename=${typedefName,,}
 variableName=${typedefName,}
 
 ## Template
-/bin/cat << EOF > $filename.h
+/usr/bin/cat << EOF > $filename.h
 /*
  * $filename.h - C header file for the ${structName} struct
  *
@@ -188,7 +188,7 @@ void ${md5Hash}_init${typedefName}(${typedefName} *${variableName});
 
 EOF
 
-/bin/cat << EOF >> $filename.c
+/usr/bin/cat << EOF >> $filename.c
 /*
  * $filename.c - C source file for the ${structName} struct
  *

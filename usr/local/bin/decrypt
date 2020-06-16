@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # decrypt - DevOpsBroker utility for decrypting files with a symmetric cipher

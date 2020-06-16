@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # udev - DevOpsBroker utility for viewing and testing udev rules for devices
@@ -50,7 +50,7 @@ ${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m
 ################################## Variables ##################################
 
 ## Bash exec variables
-EXEC_UDEVADM=/sbin/udevadm
+EXEC_UDEVADM=/usr/bin/udevadm
 
 ## Options
 command="$1"
@@ -68,7 +68,8 @@ if [ -z "$command" ]; then
 fi
 
 # Ensure the first parameter is a valid command
-if [ $(containsElement "$command" "${validCommands[@]}") != '0' ]; then
+containsElement "$command" "${validCommands[@]}"
+if [ $? -eq 1 ]; then
 	printError 'udev' "Invalid command: '$command'"
 	echo
 	printUsage 'udev { env | info | test | trigger }'

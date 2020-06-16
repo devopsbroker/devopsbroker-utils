@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # reportcrash - DevOpsBroker administrative tool for managing apport crash reports

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # extract - DevOpsBroker utility for decompressing just about any compressed

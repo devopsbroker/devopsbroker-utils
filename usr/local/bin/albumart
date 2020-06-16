@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # albumart - DevOpsBroker script for generating standardized album art JPEG images

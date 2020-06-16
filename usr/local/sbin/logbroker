@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # logbroker - DevOpsBroker administrative tool for managing log files
@@ -129,9 +129,9 @@ function validateJournal() {
 ################################## Variables ##################################
 
 ## Bash exec variables
-EXEC_DMESG=/bin/dmesg
-EXEC_GZIP=/bin/gzip
-EXEC_JOURNALCTL=/bin/journalctl
+EXEC_DMESG=/usr/bin/dmesg
+EXEC_GZIP=/usr/bin/gzip
+EXEC_JOURNALCTL=/usr/bin/journalctl
 
 ## Options
 logName=${1:-}
@@ -151,7 +151,8 @@ if [ -z "$logName" ]; then
 fi
 
 # Display error if invalid log name
-if [ $(containsElement "$logName" "${validLogNames[@]}") != '0' ]; then
+containsElement "$logName" "${validLogNames[@]}"
+if [ $? -eq 1 ]; then
 	printError $scriptName "Invalid log name: '$logName'"
 	echo
 	printUsage $usageMessage

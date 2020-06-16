@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # bash-script.tpl - DevOpsBroker template script for generating Bash scripts
@@ -80,8 +80,8 @@ ubuntuRelease=${2:-"$(getUbuntuRelease)"}
 kernelVersion=${3:-"$(getKernelVersion)"}
 
 ## Template
-/bin/cat << EOF
-#!/bin/bash
+/usr/bin/cat << EOF
+#!/usr/bin/bash
 
 #
 # $scriptName - Description goes here

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # wipedisk - DevOpsBroker utility for securely wiping disk drives
@@ -57,10 +57,8 @@ fi
 
 ## Bash exec variables
 EXEC_BETWEEN=/usr/local/bin/between
-EXEC_DD=/bin/dd
-EXEC_HDPARM=/sbin/hdparm
-EXEC_LSBLK=/bin/lsblk
-EXEC_UMOUNT=/bin/umount
+EXEC_HDPARM=/usr/sbin/hdparm
+EXEC_LSBLK=/usr/bin/lsblk
 
 ## Options
 deviceNode="$1"

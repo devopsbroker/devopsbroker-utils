@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # movedir - DevOpsBroker utility for moving one of /cache /home /opt /snap

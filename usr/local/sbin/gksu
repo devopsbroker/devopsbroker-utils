@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # gksu - DevOpsBroker pkexec wrapper script providing legacy gksu functionality

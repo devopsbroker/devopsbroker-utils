@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # printAnsi256 - DevOpsBroker utility for printing the 256-color ANSI codes and

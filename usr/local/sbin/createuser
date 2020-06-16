@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # createuser - DevOpsBroker administration script for creating new users on remote servers
@@ -68,7 +68,6 @@ fi
 ################################## Variables ##################################
 
 ## Bash exec variables
-EXEC_ADDUSER=/usr/sbin/adduser
 EXEC_ID=/usr/bin/id
 
 ## Options

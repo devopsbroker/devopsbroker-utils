@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # printAnsi16 - DevOpsBroker utility for printing the 4-bit 16-color ANSI codes

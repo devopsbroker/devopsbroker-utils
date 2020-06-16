@@ -24,7 +24,7 @@
 
 // ════════════════════════════ Feature Test Macros ═══════════════════════════
 
-#define _DEFAULT_SOURCE
+#define _GNU_SOURCE
 
 // ═════════════════════════════════ Includes ═════════════════════════════════
 
@@ -173,7 +173,7 @@ static void processCmdLine(CmdLineParam *cmdLineParm, FirewallParams *firewallPa
 
 	// Build the iptables command-line
 	c598a24c_initStringBuilder(&strBuilder);
-	c598a24c_append_string(&strBuilder, "/sbin/iptables -t ");
+	c598a24c_append_string(&strBuilder, "/usr/sbin/iptables -t ");
 	c598a24c_append_string(&strBuilder, firewallParams->tableName);
 	c598a24c_append_string(&strBuilder, " --line-numbers --numeric --list ");
 	c598a24c_append_string(&strBuilder, firewallParams->chainName);
@@ -336,7 +336,7 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-	b196167f_destroyAllElements(&firewallParams.ruleList);
+	b196167f_destroyListArray(&firewallParams.ruleList, f668c4bd_free);
 
 	// Exit with success
 	exit(EXIT_SUCCESS);
@@ -388,7 +388,7 @@ static int processAdd(FirewallParams *firewallParams) {
 		c598a24c_initStringBuilder(&strBuilder);
 
 		// Build the iptables command-line
-		c598a24c_append_string(&strBuilder, "/sbin/iptables -t ");
+		c598a24c_append_string(&strBuilder, "/usr/sbin/iptables -t ");
 		c598a24c_append_string(&strBuilder, firewallParams->tableName);
 		c598a24c_append_string(&strBuilder, " -I ");
 		c598a24c_append_string(&strBuilder, firewallParams->chainName);
@@ -440,7 +440,7 @@ static int processDelete(FirewallParams *firewallParams) {
 		c598a24c_initStringBuilder(&strBuilder);
 
 		// Build the iptables command-line
-		c598a24c_append_string(&strBuilder, "/sbin/iptables -t ");
+		c598a24c_append_string(&strBuilder, "/usr/sbin/iptables -t ");
 		c598a24c_append_string(&strBuilder, firewallParams->tableName);
 		c598a24c_append_string(&strBuilder, " -D ");
 		c598a24c_append_string(&strBuilder, firewallParams->chainName);

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # hexToRgb - DevOpsBroker utility for converting a Hex color code to an RGB color code

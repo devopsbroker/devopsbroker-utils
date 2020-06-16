@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # showFileFormat - DevOpsBroker utility for printing the format of a file

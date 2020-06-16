@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # c-source-file.tpl - DevOpsBroker template script for generating C source files
@@ -78,7 +78,7 @@ fi
 headerFileName=${sourceFileName/.c/.h}
 
 ## Template
-/bin/cat << EOF
+/usr/bin/cat << EOF
 /*
  * $sourceFileName - C source file
  *

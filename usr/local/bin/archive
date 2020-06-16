@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # archive - DevOpsBroker utility for managing various archive file formats
@@ -104,7 +104,8 @@ fi
 if [ "$showCommandHelp" == 'true' ]; then
 
 	# Display error if invalid command
-	if [ $(containsElement "$command" "${validCommands[@]}") != '0' ]; then
+	containsElement "$command" "${validCommands[@]}"
+	if [ $? -eq 1 ]; then
 		printError 'archive' "Invalid command: '$command'"
 		echo
 		printUsage "archive ${gold}[help]${yellow} { create | list }"

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # reverse-dns - DevOpsBroker utility for performing a reverse DNS lookup of an IP address

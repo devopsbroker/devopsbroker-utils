@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # md5sums - DevOpsBroker utility for generating the DEBIAN/md5sums .deb package file

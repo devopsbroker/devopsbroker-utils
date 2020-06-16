@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # public-ip - DevOpsBroker utility for displaying either the IPv4 or IPv6

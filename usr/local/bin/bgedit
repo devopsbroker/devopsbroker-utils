@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # bgedit - DevOpsBroker utility for opening files in the background for editing with gedit

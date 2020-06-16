@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # fileinfo.tpl - DevOpsBroker template script for generating HTML5 file information files
@@ -79,7 +79,7 @@ fi
 fileSizeKB=$(echo "scale=2; $fileSize / 1024" | $EXEC_BC)
 
 ## Template
-/bin/cat << EOF
+/usr/bin/cat << EOF
 <!DOCTYPE html>
 
 <html>

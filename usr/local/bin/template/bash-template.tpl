@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # bash-template.tpl - DevOpsBroker template script for generating Bash template files
@@ -80,8 +80,8 @@ ubuntuRelease=${2:-"$(getUbuntuRelease)"}
 kernelVersion=${3:-"$(getKernelVersion)"}
 
 ## Template
-/bin/cat << TPL
-#!/bin/bash
+/usr/bin/cat << TPL
+#!/usr/bin/bash
 
 #
 # $templateName - Description goes here
@@ -122,7 +122,7 @@ kernelVersion=${3:-"$(getKernelVersion)"}
 
 
 ## Template
-/bin/cat << EOF
+/usr/bin/cat << EOF
 
 
 EOF

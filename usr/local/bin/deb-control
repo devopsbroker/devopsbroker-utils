@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # deb-control - DevOpsBroker utility for managing the DEBIAN/control .deb package file

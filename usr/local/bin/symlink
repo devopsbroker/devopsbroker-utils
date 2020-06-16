@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # symlink - DevOpsBroker utility for creating symbolic links

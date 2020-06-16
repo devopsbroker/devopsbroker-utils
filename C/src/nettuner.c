@@ -413,7 +413,7 @@ static void generateNetworkdTuningScript(char * deviceName, EthtoolSettings *eth
 	a66923ff_initTime(&time, a66923ff_getTime());
 	isEthernet = (deviceName[0] == 'e');
 
-	puts(  "#!/bin/bash");
+	puts(  "#!/usr/bin/bash");
 	puts(  "#");
 	printf("# tune-%s - DevOpsBroker network interface tuning script\n", deviceName);
 	puts(  "#");
@@ -512,7 +512,7 @@ static void generateNetworkManagerTuningScript(TuningParams *tuningParams, Ethto
 	a66923ff_initTime(&time, a66923ff_getTime());
 	isEthernet = (tuningParams->deviceName[0] == 'e');
 
-	puts(  "#!/bin/bash");
+	puts(  "#!/usr/bin/bash");
 	puts(  "#");
 	printf("# tune-%s - DevOpsBroker network interface tuning script\n", tuningParams->deviceName);
 	puts(  "#");

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # smbshare - DevOpsBroker utility for creating and managing Samba shares
@@ -81,7 +81,6 @@ function showHelp() {
 ################################## Variables ##################################
 
 ## Bash exec variables
-EXEC_ADDUSER=/usr/sbin/adduser
 EXEC_GETENT=/usr/bin/getent
 EXEC_PDBEDIT=/usr/bin/pdbedit
 EXEC_SMBPASSWD=/usr/bin/smbpasswd
@@ -108,7 +107,8 @@ if [ -z "$command" ]; then
 fi
 
 # Display error if invalid command
-if [ $(containsElement "$command" "${validCommands[@]}") != '0' ]; then
+containsElement "$command" "${validCommands[@]}"
+if [ $? -eq 1 ]; then
 	printError 'smbshare' "Invalid command: '$command'"
 	echo
 	printUsage 'smbshare { adduser | create }'
@@ -236,7 +236,7 @@ elif [ "$command" == 'create' ]; then
 		if [ ! -d "$rootDir/$shareName" ]; then
 			printInfo "Creating group share directory '$rootDir/$shareName'"
 			$EXEC_MKDIR --parents --mode=2770 "$rootDir/$shareName"
-			/bin/chown root:sambashare "$rootDir/$shareName"
+			$EXEC_CHOWN root:sambashare "$rootDir/$shareName"
 		fi
 
 		# Create Samba share
@@ -258,7 +258,7 @@ elif [ "$command" == 'create' ]; then
 		if [ ! -d "$rootDir/$shareName" ]; then
 			printInfo "Creating public share directory '$rootDir/$shareName'"
 			$EXEC_MKDIR --parents --mode=777 "$rootDir/$shareName"
-			/bin/chown nobody:nogroup "$rootDir/$shareName"
+			$EXEC_CHOWN nobody:nogroup "$rootDir/$shareName"
 		fi
 
 		# Create Samba share
@@ -287,7 +287,7 @@ elif [ "$command" == 'create' ]; then
 		if [ ! -d "$rootDir/$username" ]; then
 			printInfo "Creating user share directory '$rootDir/$username'"
 			$EXEC_MKDIR --parents --mode=750 "$rootDir/$username"
-			/bin/chown $username:$username "$rootDir/$username"
+			$EXEC_CHOWN $username:$username "$rootDir/$username"
 		fi
 
 		# Create Samba share

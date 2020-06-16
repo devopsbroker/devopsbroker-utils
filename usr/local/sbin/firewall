@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # firewall - DevOpsBroker administrative tool for managing iptables/ip6tables
@@ -181,12 +181,12 @@ function validateStop() {
 
 ## Bash exec variables
 EXEC_FIRELOG=/usr/local/bin/firelog
-EXEC_MODPROBE=/sbin/modprobe
+EXEC_MODPROBE=/usr/sbin/modprobe
 
-IPTABLES=/sbin/iptables
-IP6TABLES=/sbin/ip6tables
-IPTABLES_RESTORE=/sbin/iptables-restore
-IP6TABLES_RESTORE=/sbin/ip6tables-restore
+IPTABLES=/usr/sbin/iptables
+IP6TABLES=/usr/sbin/ip6tables
+IPTABLES_RESTORE=/usr/sbin/iptables-restore
+IP6TABLES_RESTORE=/usr/sbin/ip6tables-restore
 
 ## Options
 command=${1:-}
@@ -214,12 +214,16 @@ if [ "$showCommandHelp" == 'false' ] && [ -z "$command" ]; then
 fi
 
 # Display error if invalid command
-if [ "$command" ] && [ $(containsElement "$command" "${validCommands[@]}") != '0' ]; then
-	printError $scriptName "Invalid command: '$command'"
-	echo
-	printUsage "$scriptName { enable | list | log | start | stop }"
+if [ "$command" ]; then
+	containsElement "$command" "${validCommands[@]}"
 
-	exit 1
+	if [ $? -eq 1 ]; then
+		printError $scriptName "Invalid command: '$command'"
+		echo
+		printUsage "$scriptName { enable | list | log | start | stop }"
+
+		exit 1
+	fi
 fi
 
 if [ "$showCommandHelp" == 'true' ]; then
@@ -228,7 +232,8 @@ if [ "$showCommandHelp" == 'true' ]; then
 fi
 
 # Display error if not running as root
-if [ $(containsElement "$command" "${sudoCommands[@]}") == '0' ] && [ "$USER" != 'root' ]; then
+containsElement "$command" "${sudoCommands[@]}"
+if [ $? -eq 0 ] && [ "$USER" != 'root' ]; then
 	printError $scriptName 'Permission denied (you must be root)'
 	exit 1
 fi

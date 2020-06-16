@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # verify - DevOpsBroker utility for creating and verifying file hashes and signatures
@@ -211,7 +211,8 @@ if [ -z "$command" ]; then
 fi
 
 # Display error if invalid command
-if [ $(containsElement "$command" "${validCommands[@]}") != '0' ]; then
+containsElement "$command" "${validCommands[@]}"
+if [ $? -eq 1 ]; then
 	printError $scriptName "Invalid command: $command"
 	echo
 	printUsage "$scriptName { compute | pgp | sha256 | sign }"

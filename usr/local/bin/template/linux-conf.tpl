@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # linux-conf.tpl - DevOpsBroker template script for generating Linux configuration files
@@ -76,7 +76,7 @@ fi
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Template ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 ## Template
-/bin/cat << EOF
+/usr/bin/cat << EOF
 #
 # $confName - Description goes here
 #

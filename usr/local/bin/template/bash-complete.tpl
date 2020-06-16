@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # bash-complete.tpl - DevOpsBroker template for generating Bash complete scripts
@@ -89,8 +89,8 @@ fi
 functionName="_$commandName"
 
 ## Template
-/bin/cat << EOF
-#!/bin/bash
+/usr/bin/cat << EOF
+#!/usr/bin/bash
 
 #
 # $commandName - Bash completion script for the $commandName utility

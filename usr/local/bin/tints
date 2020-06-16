@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # tints - DevOpsBroker utility for generating tinted RGB colors

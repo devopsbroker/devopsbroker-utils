@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # dirchmod - DevOpsBroker utility for changing only directory mode bits

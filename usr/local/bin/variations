@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # variations - DevOpsBroker utility for generating variations of an RGB color

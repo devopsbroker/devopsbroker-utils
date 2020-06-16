@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # bindmount - DevOpsBroker utility for creating bind mounts

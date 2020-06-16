@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # shades - DevOpsBroker utility for generating shaded RGB colors

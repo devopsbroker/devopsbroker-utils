@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # convert-number - DevOpsBroker utility for converting between binary, decimal,

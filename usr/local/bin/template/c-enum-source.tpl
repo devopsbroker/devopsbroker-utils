@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # c-enum-source.tpl - DevOpsBroker template script for generating C enum source files
@@ -101,7 +101,7 @@ filename=${typedefName,,}
 variableName=${typedefName,}
 
 ## Template
-/bin/cat << EOF > $filename.h
+/usr/bin/cat << EOF > $filename.h
 /*
  * $filename.h - C header file for the ${enumName} enum
  *
@@ -168,7 +168,7 @@ char *${md5Hash}_toString${typedefName}(const ${typedefName} ${variableName});
 
 EOF
 
-/bin/cat << EOF > $filename.c
+/usr/bin/cat << EOF > $filename.c
 /*
  * $filename.c - C source file for the ${enumName} enum
  *

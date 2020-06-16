@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # makefile.tpl - DevOpsBroker template script for generating makefiles
@@ -66,7 +66,7 @@ fi
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Template ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 ## Template
-/bin/cat << EOF
+/usr/bin/cat << EOF
 #
 # makefile - Description goes here
 #
@@ -112,7 +112,7 @@ $projectName: bin/$projectName.o
 	\$(CC) bin/$projectName.o -o $projectName
 
 clean:
-	/bin/rm -f $projectName bin/$projectName.o
+	/usr/bin/rm -f $projectName bin/$projectName.o
 
 printenv:
 	@echo "MAKEFILE_LIST: \$(MAKEFILE_LIST)"

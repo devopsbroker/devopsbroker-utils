@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # c-header-file.tpl - DevOpsBroker template script for generating C header files
@@ -79,7 +79,7 @@ includeGuard="${headerFileName^^}"
 includeGuard=${includeGuard/./_}
 
 ## Template
-/bin/cat << EOF
+/usr/bin/cat << EOF
 /*
  * $headerFileName - C header file
  *

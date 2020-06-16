@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # asm-source-file.tpl - DevOpsBroker template script for generating NASM source files
@@ -76,7 +76,7 @@ fi
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Template ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 ## Template
-/bin/cat << EOF
+/usr/bin/cat << EOF
 ;
 ; $sourceFileName - Description goes here
 ;

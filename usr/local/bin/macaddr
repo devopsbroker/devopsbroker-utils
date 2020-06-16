@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 #
 # macaddr - DevOpsBroker utility for generating a MAC-48 address
