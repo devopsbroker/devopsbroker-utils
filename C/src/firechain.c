@@ -1,7 +1,7 @@
 /*
  * firechain.c - DevOpsBroker utility for modifying iptables/ip6tables firewall chain rules
  *
- * Copyright (C) 2019 Edward Smith <edwardsmith@devopsbroker.org>
+ * Copyright (C) 2019-2020 Edward Smith <edwardsmith@devopsbroker.org>
  *
  * This program is free software: you can redistribute it and/or modify it under
  * the terms of the GNU General Public License as published by the Free Software
@@ -336,7 +336,7 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-	b196167f_destroyListArray(&firewallParams.ruleList, f668c4bd_free);
+	b196167f_cleanUpListArray(&firewallParams.ruleList, f668c4bd_free);
 
 	// Exit with success
 	exit(EXIT_SUCCESS);

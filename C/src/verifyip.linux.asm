@@ -1,7 +1,7 @@
 ;
-; verifyip.linux.asm - Description goes here
+; verifyip.linux.asm - DevOpsBroker NASM file for validating IPv4 or IPv6 addresses
 ;
-; Copyright (C) 2019 AUTHOR_NAME <email@address.com>
+; Copyright (C) 2019-2020 Edward Smith <edwardsmith@devopsbroker.org>
 ;
 ; This program is free software: you can redistribute it and/or modify it under
 ; the terms of the GNU General Public License as published by the Free Software
@@ -23,6 +23,7 @@
 ; verifyip utility:
 ;
 ;   o void c009cdda_verifyIPv4(char *ipAddress);
+;   o void c009cdda_verifyIPv6(char *ipAddress);
 ;
 ; echo verifyip | md5sum | cut -c 25-32
 ; -----------------------------------------------------------------------------
