@@ -62,19 +62,20 @@ export CFLAGS
 ################################### Targets ###################################
 
 .ONESHELL:
+.SILENT:
 .PHONY: default clean prepare install ls printenv
 
 default: prepare $(C_BINARIES)
 
 clean:
 	$(call printInfo,Cleaning $(OBJ_DIR) directory)
-	/bin/rm -fv $(OBJ_DIR)/*
+	/usr/bin/rm -rfv $(OBJ_DIR)
 	$(call printInfo,Cleaning $(BIN_DIR) directory)
-	/bin/rm -fv $(BIN_DIR)/*
+	/usr/bin/rm -fv $(BIN_DIR)/*
 	echo
 
 prepare:
-	/bin/mkdir -p --mode=750 $(OBJ_DIR)
+	/usr/bin/mkdir --parents --mode=750 $(OBJ_DIR)
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Object Files ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -153,18 +154,18 @@ bin/verifyip: $(OBJ_DIR)/verifyip.o $(OBJ_DIR)/verifyip.linux.o
 	test/testVerifyIP.sh
 
 install: default
-	/bin/cp -uv bin/between ../usr/local/bin
-	/bin/cp -uv bin/convert-temp ../usr/local/bin
-	/bin/cp -uv bin/derivesubnet ../usr/local/bin
-	/bin/cp -uv bin/firechain ../usr/local/sbin
-	/bin/cp -uv bin/firelog ../usr/local/bin
-	/bin/cp -uv bin/nettuner ../usr/local/bin
-	/bin/cp -uv bin/odfgrep ../usr/local/bin
-	/bin/cp -uv bin/schedtuner ../usr/local/sbin
-	/bin/cp -uv bin/scriptinfo ../usr/local/bin
-	/bin/cp -uv bin/trim ../usr/local/bin
-	/bin/cp -uv bin/verifyclass ../usr/local/bin
-	/bin/cp -uv bin/verifyip ../usr/local/bin
+	/usr/bin/cp -uv bin/between ../usr/local/bin
+	/usr/bin/cp -uv bin/convert-temp ../usr/local/bin
+	/usr/bin/cp -uv bin/derivesubnet ../usr/local/bin
+	/usr/bin/cp -uv bin/firechain ../usr/local/sbin
+	/usr/bin/cp -uv bin/firelog ../usr/local/bin
+	/usr/bin/cp -uv bin/nettuner ../usr/local/bin
+	/usr/bin/cp -uv bin/odfgrep ../usr/local/bin
+	/usr/bin/cp -uv bin/schedtuner ../usr/local/sbin
+	/usr/bin/cp -uv bin/scriptinfo ../usr/local/bin
+	/usr/bin/cp -uv bin/trim ../usr/local/bin
+	/usr/bin/cp -uv bin/verifyclass ../usr/local/bin
+	/usr/bin/cp -uv bin/verifyip ../usr/local/bin
 
 ls:
 	echo "Phony Targets:"
