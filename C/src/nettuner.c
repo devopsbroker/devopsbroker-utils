@@ -275,11 +275,7 @@ int main(int argc, char *argv[]) {
 	d3843373_initEthernetRequest(&ethRequest, tuningParams.deviceName);
 
 	a34d4619_open(&ipv4Socket, IPV4_SOCKET_UDP);
-
-	if (tuningParams.isEthernet) {
-		d3843373_getEthernetStatus(&ethDevice, &ethRequest, &ipv4Socket);
-	}
-
+	d3843373_getEthernetStatus(&ethDevice, &ethRequest, &ipv4Socket);
 	d3843373_getEthernetMTU(&ethDevice, &ethRequest, &ipv4Socket);
 	a34d4619_close(&ipv4Socket);
 
