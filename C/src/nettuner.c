@@ -551,7 +551,7 @@ static void generateNetworkManagerTuningScript(TuningParams *tuningParams, Ethto
 	puts(  "fi\n");
 
 	puts(  "## Variables");
-	printf("IP4_GATEWAY=\"$(/usr/sbin/ip route show 0.0.0.0/0 dev %s)\"\n", tuningParams->deviceName);
+	printf("IP4_GATEWAY=\"$(/usr/sbin/ip route show 0.0.0.0/0 dev %s | /usr/bin/awk '{print $3}')\"\n", tuningParams->deviceName);
 	puts(  "MAC_ADDR=\"$(/usr/sbin/arp -n -a $IP4_GATEWAY | /usr/bin/awk '{print $4}')\"\n");
 
 	puts(  "################################### Actions ###################################\n");
