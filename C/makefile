@@ -52,7 +52,6 @@ C_BINARIES := $(subst obj/,bin/,$(C_OBJECTS:.o=))
 ASM_SOURCES := $(shell /usr/bin/find $(SRC_DIR) -type f -name "*.asm")
 ASM_OBJECTS := $(subst src/,obj/,$(ASM_SOURCES:.asm=.o))
 
-EXEC_CHMOD := $(shell which chmod)
 EXEC_CP :=  $(shell which cp)
 EXEC_MKDIR := $(shell which mkdir)
 EXEC_RM := $(shell which rm)
