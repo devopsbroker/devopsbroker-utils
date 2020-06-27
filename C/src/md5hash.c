@@ -136,10 +136,10 @@ int main(int argc, char *argv[]) {
 			ce97d170_readFileBufferList(&aioContext, &aioFile, &fileBufferList, dataLength);
 			fileBuffer = fileBufferList.values[0];
 
-			while (dataLength > 0) {
+			while (fileBuffer != NULL) {
 				dataLength -= fileBuffer->numBytes;
 
-				if (dataLength == 0) {
+				if (aioFile.fileSize == 0 && dataLength == 0) {
 					f1518caf_md5StreamEnd(md5State, fileBuffer->buffer, fileBuffer->numBytes, fileStatus.st_size);
 				} else {
 					f1518caf_md5Stream(md5State, fileBuffer->buffer, fileBuffer->numBytes);
@@ -147,6 +147,9 @@ int main(int argc, char *argv[]) {
 
 				fileBuffer = fileBuffer->next;
 			}
+
+			// Release all currently held FileBuffers
+			ce97d170_resetFileBufferList(&fileBufferList, f502a409_releasePage);
 		}
 
 //		f1207515_printContext(&aioContext);
