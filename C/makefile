@@ -52,6 +52,12 @@ C_BINARIES := $(subst obj/,bin/,$(C_OBJECTS:.o=))
 ASM_SOURCES := $(shell /usr/bin/find $(SRC_DIR) -type f -name "*.asm")
 ASM_OBJECTS := $(subst src/,obj/,$(ASM_SOURCES:.asm=.o))
 
+EXEC_CHMOD := $(shell which chmod)
+EXEC_CP :=  $(shell which cp)
+EXEC_MKDIR := $(shell which mkdir)
+EXEC_RM := $(shell which rm)
+EXEC_STRIP := $(shell which strip)
+
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Exports ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 export ASM
@@ -69,13 +75,13 @@ default: prepare $(C_BINARIES)
 
 clean:
 	$(call printInfo,Cleaning $(OBJ_DIR) directory)
-	/usr/bin/rm -rfv $(OBJ_DIR)
+	$(EXEC_RM) -rfv $(OBJ_DIR)
 	$(call printInfo,Cleaning $(BIN_DIR) directory)
-	/usr/bin/rm -fv $(BIN_DIR)/*
+	$(EXEC_RM) -fv $(BIN_DIR)/*
 	echo
 
 prepare:
-	/usr/bin/mkdir --parents --mode=750 $(OBJ_DIR)
+	$(EXEC_MKDIR) --parents --mode=750 $(OBJ_DIR)
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Object Files ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -100,27 +106,31 @@ bin/between: $(OBJ_DIR)/between.o
 bin/convert-temp: $(OBJ_DIR)/convert-temp.o $(OBJ_DIR)/convert-temp.linux.o
 	$(call printInfo,Creating $(@) executable)
 	$(CC) $(LDFLAGS) $^ $(LIB_NAMES) -o $@
-	/usr/bin/strip -s $@
+	$(EXEC_STRIP) -s $@
 
 bin/derivesubnet: $(OBJ_DIR)/derivesubnet.o
 	$(call printInfo,Creating $(@) executable)
 	$(CC) $(LDFLAGS) $^ $(LIB_NAMES) -o $@
-	/usr/bin/strip -s $@
+	$(EXEC_STRIP) -s $@
 
 bin/firechain: $(OBJ_DIR)/firechain.o
 	$(call printInfo,Creating $(@) executable)
 	$(CC) $(LDFLAGS) $^ $(LIB_NAMES) -o $@
-	/usr/bin/strip -s $@
+	$(EXEC_STRIP) -s $@
 
 bin/firelog: $(OBJ_DIR)/firelog.o
 	$(call printInfo,Creating $(@) executable)
 	$(CC) $(LDFLAGS) $^ $(LIB_NAMES) -o $@
-	/usr/bin/strip -s $@
+	$(EXEC_STRIP) -s $@
+
+bin/md5hash: $(OBJ_DIR)/md5hash.o
+	$(call printInfo,Creating $(@) executable)
+	$(CC) $(LDFLAGS) $^ $(LIB_NAMES) -o $@
 
 bin/nettuner: $(OBJ_DIR)/nettuner.o
 	$(call printInfo,Creating $(@) executable)
 	$(CC) $(LDFLAGS) $^ $(LIB_NAMES) -o $@
-	/usr/bin/strip -s $@
+	$(EXEC_STRIP) -s $@
 
 bin/odfgrep: $(OBJ_DIR)/odfgrep.o
 	$(call printInfo,Creating $(@) executable)
@@ -129,43 +139,44 @@ bin/odfgrep: $(OBJ_DIR)/odfgrep.o
 bin/schedtuner: $(OBJ_DIR)/schedtuner.o
 	$(call printInfo,Creating $(@) executable)
 	$(CC) $(LDFLAGS) $^ $(LIB_NAMES) -o $@
-	/usr/bin/strip -s $@
+	$(EXEC_STRIP) -s $@
 
 bin/scriptinfo: $(OBJ_DIR)/scriptinfo.o $(OBJ_DIR)/scriptinfo.linux.o
 	$(call printInfo,Creating $(@) executable)
 	$(CC) $(LDFLAGS) $^ $(LIB_NAMES) -o $@
-	/usr/bin/strip -s $@
+	$(EXEC_STRIP) -s $@
 
 bin/trim: $(OBJ_DIR)/trim.o
 	$(call printInfo,Creating $(@) executable)
 	$(CC) $(LDFLAGS) $^ $(LIB_NAMES) -o $@
-	/usr/bin/strip -s $@
+	$(EXEC_STRIP) -s $@
 
 bin/verifyclass: $(OBJ_DIR)/verifyclass.o
 	$(call printInfo,Creating $(@) executable)
 	$(CC) $(LDFLAGS) $^ $(LIB_NAMES) -o $@
-	/usr/bin/strip -s $@
+	$(EXEC_STRIP) -s $@
 
 bin/verifyip: $(OBJ_DIR)/verifyip.o $(OBJ_DIR)/verifyip.linux.o
 	$(call printInfo,Creating $(@) executable)
 	$(CC) $(LDFLAGS) $^ $(LIB_NAMES) -o $@
-	/usr/bin/strip -s $@
+	$(EXEC_STRIP) -s $@
 	$(call printInfo,Testing $(@) executable)
 	test/testVerifyIP.sh
 
 install: default
-	/usr/bin/cp -uv bin/between ../usr/local/bin
-	/usr/bin/cp -uv bin/convert-temp ../usr/local/bin
-	/usr/bin/cp -uv bin/derivesubnet ../usr/local/bin
-	/usr/bin/cp -uv bin/firechain ../usr/local/sbin
-	/usr/bin/cp -uv bin/firelog ../usr/local/bin
-	/usr/bin/cp -uv bin/nettuner ../usr/local/bin
-	/usr/bin/cp -uv bin/odfgrep ../usr/local/bin
-	/usr/bin/cp -uv bin/schedtuner ../usr/local/sbin
-	/usr/bin/cp -uv bin/scriptinfo ../usr/local/bin
-	/usr/bin/cp -uv bin/trim ../usr/local/bin
-	/usr/bin/cp -uv bin/verifyclass ../usr/local/bin
-	/usr/bin/cp -uv bin/verifyip ../usr/local/bin
+	$(EXEC_CP) -uv bin/between ../usr/local/bin
+	$(EXEC_CP) -uv bin/convert-temp ../usr/local/bin
+	$(EXEC_CP) -uv bin/derivesubnet ../usr/local/bin
+	$(EXEC_CP) -uv bin/firechain ../usr/local/sbin
+	$(EXEC_CP) -uv bin/firelog ../usr/local/bin
+	$(EXEC_CP) -uv bin/md5hash ../usr/local/bin
+	$(EXEC_CP) -uv bin/nettuner ../usr/local/bin
+	$(EXEC_CP) -uv bin/odfgrep ../usr/local/bin
+	$(EXEC_CP) -uv bin/schedtuner ../usr/local/sbin
+	$(EXEC_CP) -uv bin/scriptinfo ../usr/local/bin
+	$(EXEC_CP) -uv bin/trim ../usr/local/bin
+	$(EXEC_CP) -uv bin/verifyclass ../usr/local/bin
+	$(EXEC_CP) -uv bin/verifyip ../usr/local/bin
 
 ls:
 	echo "Phony Targets:"
@@ -182,6 +193,7 @@ ls:
 	echo "  bin/derivesubnet"
 	echo "  bin/firechain"
 	echo "  bin/firelog"
+	echo "  bin/md5hash"
 	echo "  bin/nettuner"
 	echo "  bin/odfgrep"
 	echo "  bin/schedtuner"
