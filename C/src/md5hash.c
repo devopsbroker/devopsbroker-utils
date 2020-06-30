@@ -1,7 +1,7 @@
 /*
- * md5hash.c - C source file
+ * md5hash.c - DevOpsBroker utility for generating MD5 hashes
  *
- * Copyright (C) 2020 AUTHOR_NAME <email@address.com>
+ * Copyright (C) 2020 Edward Smith <edwardsmith@devopsbroker.org>
  *
  * This program is free software: you can redistribute it and/or modify it under
  * the terms of the GNU General Public License as published by the Free Software
@@ -108,48 +108,34 @@ int main(int argc, char *argv[]) {
 		AIOFile aioFile;
 		FileBufferList fileBufferList;
 		FileBuffer *fileBuffer;
-		FileStatus fileStatus;
-		uint32_t dataLength;
+		int64_t dataLength;
 
 		// Initialize the AIOContext and AIOFile
 		f1207515_initAIOContext(&aioContext, 16);
-		f1207515_initAIOFile(&aioFile, md5Params.fileName);
+		f1207515_initAIOFile(&aioContext, &aioFile, md5Params.fileName);
 
 		// Initialize the FileBufferList struct
 		ce97d170_initFileBufferList(&fileBufferList);
 
-		// Open the file and retrieve the file size
+		// Open the file
 		f1207515_open(&aioFile, FOPEN_READONLY, 0);
-		e2f74138_getDescriptorStatus(aioFile.fd, &fileStatus);
-		aioFile.fileSize = fileStatus.st_size;
+		dataLength = aioFile.fileSize;
 
-		aioFile.offset = 0;
-		while (aioFile.fileSize > 0) {
-			if (aioFile.fileSize > ASYNC_AIOTICKET_MAXSIZE) {
-				dataLength = ASYNC_AIOTICKET_MAXSIZE;
-				aioFile.fileSize -= ASYNC_AIOTICKET_MAXSIZE;
-			} else {
-				dataLength = aioFile.fileSize;
-				aioFile.fileSize = 0;
-			}
-
-			ce97d170_readFileBufferList(&aioContext, &aioFile, &fileBufferList, dataLength);
+		while (dataLength != 0) {
+			ce97d170_readFileBufferList(&aioFile, &fileBufferList, dataLength);
 			fileBuffer = fileBufferList.values[0];
 
 			while (fileBuffer != NULL) {
 				dataLength -= fileBuffer->numBytes;
 
-				if (aioFile.fileSize == 0 && dataLength == 0) {
-					f1518caf_md5StreamEnd(md5State, fileBuffer->buffer, fileBuffer->numBytes, fileStatus.st_size);
+				if (dataLength == 0) {
+					f1518caf_md5StreamEnd(md5State, fileBuffer->buffer, fileBuffer->numBytes, aioFile.fileSize);
 				} else {
 					f1518caf_md5Stream(md5State, fileBuffer->buffer, fileBuffer->numBytes);
 				}
 
 				fileBuffer = fileBuffer->next;
 			}
-
-			// Release all currently held FileBuffers
-			ce97d170_resetFileBufferList(&fileBufferList, f502a409_releasePage);
 		}
 
 //		f1207515_printContext(&aioContext);
