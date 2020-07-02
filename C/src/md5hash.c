@@ -38,6 +38,7 @@
 #include "org/devopsbroker/lang/error.h"
 #include "org/devopsbroker/lang/memory.h"
 #include "org/devopsbroker/lang/string.h"
+#include "org/devopsbroker/memory/memorypool.h"
 #include "org/devopsbroker/memory/pagepool.h"
 #include "org/devopsbroker/memory/slabpool.h"
 #include "org/devopsbroker/terminal/commandline.h"
@@ -143,6 +144,7 @@ int main(int argc, char *argv[]) {
 		f1207515_cleanUpAIOFile(&aioFile);
 		f1207515_cleanUpAIOContext(&aioContext);
 		ce97d170_cleanUpFileBufferList(&fileBufferList, f502a409_releasePage);
+		b86b2c8d_destroyMemoryPool(false);
 		f502a409_destroyPagePool(false);
 		b426145b_destroySlabPool(false);
 	}
