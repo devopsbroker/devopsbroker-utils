@@ -550,13 +550,15 @@ static void generateNetworkManagerTuningScript(TuningParams *tuningParams, Ethto
 
 	puts(  "## Variables");
 	printf("IP4_GATEWAY=\"$(/usr/sbin/ip route show 0.0.0.0/0 dev %s | /usr/bin/awk '{print $3}')\"\n", tuningParams->deviceName);
-	puts(  "MAC_ADDR=\"$(/usr/sbin/arp -n -a $IP4_GATEWAY | /usr/bin/awk '{print $4}')\"\n");
+	puts(  "MAC_ADDR=\"$(/usr/sbin/arp -n -a $IP4_GATEWAY | /usr/bin/awk '{print $4}')\"");
+	puts(  "SCRIPT_NAME=\"$(/usr/bin/basename $BASH_SOURCE)\"");
+	puts(  "MD5_HASH=\"$(echo \"$SCRIPT_NAME\" | /usr/bin/cut -d '-' -f4)\"\n");
 
 	puts(  "################################### Actions ###################################\n");
 
-	printf("/usr/bin/logger -p syslog.notice -i Called /etc/NetworkManager/dispatcher.d/tune-%s with interface \"$IFACE\" and action \"$ACTION\";\n\n", tuningParams->deviceName);
-
 	printf("if [ \"$IFACE\" == '%s' ] && [ \"$ACTION\" == 'up' ] && [ \"$MAC_ADDR\" == '%s' ]; then\n", tuningParams->deviceName, tuningParams->macAddress);
+	printf("	/usr/bin/logger -p syslog.notice -i Called /etc/NetworkManager/dispatcher.d/tune-%s with interface \"$IFACE\" and action \"$ACTION\";\n\n", tuningParams->deviceName);
+
 	puts(  "	# Optimize TX Queue Length");
 	printf("	/usr/sbin/ip link set %s txqueuelen %u\n\n", tuningParams->deviceName, ethtoolSettings->txqueuelen);
 
@@ -600,7 +602,14 @@ static void generateNetworkManagerTuningScript(TuningParams *tuningParams, Ethto
 
 	puts(  "	# Optimize TCP/UDP Total Buffer Space");
 	printf("	/usr/sbin/sysctl -w net.ipv4.tcp_mem=\"%u %u %u\"\n", sysctlSettings->tcp_mem_low, sysctlSettings->tcp_mem_mid, sysctlSettings->tcp_mem_max);
-	printf("	/usr/sbin/sysctl -w net.ipv4.udp_mem=\"%u %u %u\"\n", sysctlSettings->udp_mem_low, sysctlSettings->udp_mem_mid, sysctlSettings->udp_mem_max);
+	printf("	/usr/sbin/sysctl -w net.ipv4.udp_mem=\"%u %u %u\"\n\n", sysctlSettings->udp_mem_low, sysctlSettings->udp_mem_mid, sysctlSettings->udp_mem_max);
+
+	puts(  "	# Call firewall script");
+	puts(  "	if [ -f /etc/nftables/$IFACE/firewall-$MD5_HASH.nft ]; then");
+	puts(  "		/etc/nftables/$IFACE/firewall-$MD5_HASH.nft");
+	puts(  "	else");
+	puts(  "		/etc/nftables/$IFACE/firewall-public.nft");
+	puts(  "	fi");
 	puts(  "fi\n");
 
 	puts(  "exit 0\n");
