@@ -92,7 +92,7 @@ function showHelp() {
 	echo "Valid Commands:${romantic}"
 	echo '  lookup	Performs look up of an IP address in a MaxMind DB file'
 	echo '  status	Display creation date of the GeoLite2 database file'
-	echo '  update	Downloads and updates the GeoLite2 database'
+	echo '  update	Updates the GeoLite2 database'
 
 	echo ${white}
 	echo "Valid Options:${romantic}"
@@ -116,8 +116,9 @@ validCommands=(${sudoCommands[@]} 'lookup' 'status')
 geoDbDir="/usr/share/GeoLite2"
 geoDbFile="GeoLite2-City.mmdb"
 
-# Command is the first parameter
+## Parameters
 command=${1:-}
+fileName=${2:-}
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -128,8 +129,8 @@ if [ -z $command ]; then
 fi
 
 # Display error if invalid command
-containsElement "$command" "${validCommands[@]}"
-if [ $? -eq 1 ]; then
+returnValue=$(containsElement "$command" "${validCommands[@]}")
+if [ "$returnValue" == '1' ]; then
 	printError 'geoip' "Invalid command: $command"
 	echo
 	showHelp
@@ -137,96 +138,115 @@ if [ $? -eq 1 ]; then
 	exit 1
 fi
 
-# Display error if not running as root
-containsElement "$command" "${sudoCommands[@]}"
-if [ $? -eq 0 ] && [ "$USER" != 'root' ]; then
-	printError 'geoip' 'Permission denied (you must be root)'
-	exit 1
-fi
+returnValue=$(containsElement "$command" "${sudoCommands[@]}")
 
-# Process command-line options, if present
-shift
-clParams="$@"
-option=${1:-}
+if [ "$returnValue" == "0" ]; then
+	# Display error if not running as root
+	if [ "$USER" != 'root' ]; then
+		printError 'geoip' 'Permission denied (you must be root)'
+		exit 1
+	fi
 
-while [[ "$option" =~ ^- ]]; do
-
-	if [ "$option" == '-d' ]; then
-		directoryName=${2:-}
-
-		# Display error if directory parameter is missing or invalid
-		errorMessage=$(isValidDirectory 'geoip' "$directoryName")
-
-		if [ "$errorMessage" != '0' ]; then
-			echo "$errorMessage"
-			echo
-
-			if [ $command == 'lookup' ]; then
-				printUsage "geoip $command -d directory IP_ADDR ${gold}[DATA PATH]"
-			else
-				printUsage "geoip $command -d directory"
-			fi
-
-			exit 1
-		fi
-
-		# Use geolocation database directory provided by user
-		geoDbDir="$directoryName"
-		shift 2
-
-	elif [ "$1" == '-f' ]; then
-		fileName=${2:-}
-
+	if [ "$command" == 'update' ]; then
 		# Display error if file parameter is missing or invalid
 		errorMessage=$(isValidFile 'geoip' "$fileName")
 
 		if [ "$errorMessage" != '0' ]; then
 			echo "$errorMessage"
 			echo
-
-			if [ $command == 'lookup' ]; then
-				printUsage "geoip $command -f filename IP_ADDR ${gold}[DATA PATH]"
-			else
-				printUsage "geoip $command -f filename"
-			fi
+			printUsage "geoip $command FILE"
 
 			exit 1
 		fi
-
-		# Use geolocation database file provided by user
-		geoDbFile="$fileName"
-		shift 2
-	else
-		# Display usage and error if option parameter is not valid
-		printError 'geoip' "Invalid option: $option"
-		echo
-		showHelp
-
-		exit 1
 	fi
+fi
 
-	option=${1:-}
-done
-
-if [ $command != 'update' ]; then
+# Process command-line options, if present
+if [ "$command" != 'update' ]; then
 	# Display error if MMDB file is missing or invalid
 	errorMessage=$(isValidFile 'geoip' "$geoDbDir/$geoDbFile")
 
 	if [ "$errorMessage" != '0' ]; then
 		echo "$errorMessage"
+		echo
+		printNotice 'geoip' "Please manually download the GeoLite2 database and run ${yellow}geoip update FILE${reset}"
+
 		exit 1
 	fi
-fi
 
-# Display usage if only option parameters given for lookup command
-if [ -z "$option" ] && [ $command == 'lookup' ]; then
-	if [ -z "$clParams" ]; then
-		printUsage "geoip lookup IP_ADDR ${gold}[DATA PATH]"
-	else
-		printUsage "geoip lookup $clParams IP_ADDR ${gold}[DATA PATH]"
+	shift
+	clParams="$@"
+	option=${1:-}
+
+	while [[ "$option" =~ ^- ]]; do
+
+		if [ "$option" == '-d' ]; then
+			directoryName=${2:-}
+
+			# Display error if directory parameter is missing or invalid
+			errorMessage=$(isValidDirectory 'geoip' "$directoryName")
+
+			if [ "$errorMessage" != '0' ]; then
+				echo "$errorMessage"
+				echo
+
+				if [ $command == 'lookup' ]; then
+					printUsage "geoip $command -d directory IP_ADDR ${gold}[DATA PATH]"
+				else
+					printUsage "geoip $command -d directory"
+				fi
+
+				exit 1
+			fi
+
+			# Use geolocation database directory provided by user
+			geoDbDir="$directoryName"
+			shift 2
+
+		elif [ "$1" == '-f' ]; then
+			fileName=${2:-}
+
+			# Display error if file parameter is missing or invalid
+			errorMessage=$(isValidFile 'geoip' "$fileName")
+
+			if [ "$errorMessage" != '0' ]; then
+				echo "$errorMessage"
+				echo
+
+				if [ $command == 'lookup' ]; then
+					printUsage "geoip $command -f filename IP_ADDR ${gold}[DATA PATH]"
+				else
+					printUsage "geoip $command -f filename"
+				fi
+
+				exit 1
+			fi
+
+			# Use geolocation database file provided by user
+			geoDbFile="$fileName"
+			shift 2
+		else
+			# Display usage and error if option parameter is not valid
+			printError 'geoip' "Invalid option: $option"
+			echo
+			showHelp
+
+			exit 1
+		fi
+
+		option=${1:-}
+	done
+
+	# Display usage if only option parameters given for lookup command
+	if [ -z "$option" ] && [ $command == 'lookup' ]; then
+		if [ -z "$clParams" ]; then
+			printUsage "geoip lookup IP_ADDR ${gold}[DATA PATH]"
+		else
+			printUsage "geoip lookup $clParams IP_ADDR ${gold}[DATA PATH]"
+		fi
+
+		exit 1
 	fi
-
-	exit 1
 fi
 
 ################################### Actions ###################################
@@ -278,26 +298,23 @@ elif [ $command == 'update' ]; then
 	# Create GeoLite2 directory
 	$EXEC_MKDIR --parents --mode=0755 "$geoDbDir"
 
-	printInfo 'Download latest GeoLite2 City database'
-
-	# Download GeoLite2 City geolocation database
-	$EXEC_WGET -P "$geoDbDir" http://geolite.maxmind.com/download/geoip/database/GeoLite2-City.tar.gz
-
 	printInfo 'Install GeoLite2 City database'
 
 	# Untar GeoLite2-City.tar.gz file
-	$EXEC_TAR zxf "$geoDbDir/GeoLite2-City.tar.gz" --no-same-owner --no-same-permissions -C "$geoDbDir"
+	$EXEC_TAR zxvf "$fileName" --no-same-owner --no-same-permissions -C "$geoDbDir"
 
+	printInfo 'Setting GeoLite2 City database file permissions'
 	newDBDir=$($EXEC_FIND "$geoDbDir" -type d -name "GeoLite2-City_*")
 	$EXEC_CHMOD --changes 0755 "$newDBDir"
 	$EXEC_CHMOD --changes 644 "$newDBDir/$geoDbFile"
 
 	# Move GeoLite2-City.mmdb file
 	$EXEC_MV "$newDBDir/$geoDbFile" "$geoDbDir"
+	printInfo "Moving GeoLite2 City database to ${purple}$geoDbDir"
 
 	# Remove GeoLite2-City directory and tar.gz file
+	printInfo "Deleting $newDBDir"
 	$EXEC_RM -rf "$newDBDir"
-	$EXEC_RM "$geoDbDir/GeoLite2-City.tar.gz"
 
 	# END update command
 fi
