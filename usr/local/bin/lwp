@@ -116,8 +116,9 @@ validCommands=('ids' 'list' 'stat')
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 # Display error if invalid command
-containsElement "$command" "${validCommands[@]}"
-if [ $? -eq 1 ]; then
+returnValue=$(containsElement "$command" "${validCommands[@]}")
+
+if [ $returnValue == "1" ]; then
 	printError 'lwp' "Invalid command: $command"
 	echo
 	printUsage 'lwp { ids | list | stat }'

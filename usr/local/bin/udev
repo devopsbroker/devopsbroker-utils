@@ -68,8 +68,9 @@ if [ -z "$command" ]; then
 fi
 
 # Ensure the first parameter is a valid command
-containsElement "$command" "${validCommands[@]}"
-if [ $? -eq 1 ]; then
+returnValue=$(containsElement "$command" "${validCommands[@]}")
+
+if [ $returnValue == "1" ]; then
 	printError 'udev' "Invalid command: '$command'"
 	echo
 	printUsage 'udev { env | info | test | trigger }'

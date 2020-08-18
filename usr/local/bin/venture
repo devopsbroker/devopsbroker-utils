@@ -222,8 +222,9 @@ if [ "$command" == 'help' ]; then
 fi
 
 # Display error if invalid command
-containsElement "$command" "${validCommands[@]}"
-if [ $? -eq 1 ]; then
+returnValue=$(containsElement "$command" "${validCommands[@]}")
+
+if [ $returnValue == "1" ]; then
 	printError $scriptName "Invalid command: '$command'"
 	echo
 	printUsage "$scriptName ${gold}[help]${yellow} COMMAND ${gold}[OPTION...]"

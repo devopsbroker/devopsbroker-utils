@@ -211,8 +211,9 @@ if [ -z "$command" ]; then
 fi
 
 # Display error if invalid command
-containsElement "$command" "${validCommands[@]}"
-if [ $? -eq 1 ]; then
+returnValue=$(containsElement "$command" "${validCommands[@]}")
+
+if [ $returnValue == "1" ]; then
 	printError $scriptName "Invalid command: $command"
 	echo
 	printUsage "$scriptName { compute | pgp | sha256 | sign }"

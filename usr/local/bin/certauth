@@ -93,8 +93,9 @@ if [ -z "$command" ]; then
 fi
 
 # Ensure the first parameter is a valid command
-containsElement "$command" "${validCommands[@]}"
-if [ $? -eq 1 ]; then
+returnValue=$(containsElement "$command" "${validCommands[@]}")
+
+if [ $returnValue == "1" ]; then
 	printError 'certauth' "Invalid command: '$command'"
 	echo
 	printUsage 'certauth { create | fingerprint | gencsr | genrsa | inspect | signcsr | verifycrt | verifyssl }'
@@ -103,8 +104,9 @@ if [ $? -eq 1 ]; then
 fi
 
 # Display error if incorrect usage of sudo
-containsElement "$command" "${sudoCommands[@]}"
-if [ $? -eq 0 ]; then
+returnValue=$(containsElement "$command" "${sudoCommands[@]}")
+
+if [ $returnValue == "0" ]; then
 	if [ "$USER" != 'root' ]; then
 		printError 'certauth' 'Permission denied (you must be root)'
 		exit 1

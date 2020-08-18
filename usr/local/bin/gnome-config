@@ -122,8 +122,9 @@ if [ -z "$command" ]; then
 fi
 
 # Display error if invalid command
-containsElement "$command" "${validCommands[@]}"
-if [ $? -eq 1 ]; then
+returnValue=$(containsElement "$command" "${validCommands[@]}")
+
+if [ $returnValue == "1" ]; then
 	printError 'gnome-config' "Invalid command: $command"
 	echo
 	printUsage "gnome-config ${gold}[help]${yellow} { all | gnome | nautilus | reset | terminal | ubuntu }"

@@ -104,8 +104,9 @@ fi
 if [ "$showCommandHelp" == 'true' ]; then
 
 	# Display error if invalid command
-	containsElement "$command" "${validCommands[@]}"
-	if [ $? -eq 1 ]; then
+	returnValue=$(containsElement "$command" "${validCommands[@]}")
+
+	if [ $returnValue == "1" ]; then
 		printError 'archive' "Invalid command: '$command'"
 		echo
 		printUsage "archive ${gold}[help]${yellow} { create | list }"

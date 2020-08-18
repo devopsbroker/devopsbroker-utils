@@ -519,9 +519,9 @@ fi
 
 # Display error if invalid command
 if [ "$command" ]; then
-	containsElement "$command" "${validCommands[@]}"
+	returnValue=$(containsElement "$command" "${validCommands[@]}")
 
-	if [ $? -eq 1 ]; then
+	if [ $returnValue == "1" ]; then
 		printError $scriptName "Invalid command: '$command'"
 		echo
 		printUsage "$scriptName ${gold}[help]${yellow} COMMAND ${gold}[OPTION...]"
@@ -536,8 +536,9 @@ if [ "$showCommandHelp" == 'true' ]; then
 fi
 
 # Display error if not within a Git repository
-containsElement "$command" "${repoCommands[@]}"
-if [ $? -eq 0 ] && \
+returnValue=$(containsElement "$command" "${repoCommands[@]}")
+
+if [ $returnValue == "0" ] && \
 	[ "$($EXEC_GIT rev-parse --is-inside-work-tree 2>/dev/null)" != 'true' ]; then
 		printError 'git-repo' "$PWD is not within a Git repository"
 		echo

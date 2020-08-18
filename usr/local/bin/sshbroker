@@ -471,18 +471,18 @@ fi
 
 if [ $command ]; then
 	# Display error if not running as root
-	containsElement "$command" "${sudoCommands[@]}"
+	returnValue=$(containsElement "$command" "${sudoCommands[@]}")
 
-	if [ $? -eq 0 ]; then
+	if [ $returnValue == "0" ]; then
 		if [ "$USER" != 'root' ]; then
 			printError $scriptName 'Permission denied (you must be root)'
 			exit 1
 		fi
 	else
 		# Display error if invalid command
-		containsElement "$command" "${validCommands[@]}"
+		returnValue=$(containsElement "$command" "${validCommands[@]}")
 
-		if [ $? -eq 1 ]; then
+		if [ $returnValue == "1" ]; then
 			printError $scriptName "Invalid command: '$command'"
 			echo
 			printUsage "$scriptName ${gold}[help]${yellow} COMMAND ${gold}[OPTION...]"

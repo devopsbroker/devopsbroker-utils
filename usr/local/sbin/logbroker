@@ -151,8 +151,9 @@ if [ -z "$logName" ]; then
 fi
 
 # Display error if invalid log name
-containsElement "$logName" "${validLogNames[@]}"
-if [ $? -eq 1 ]; then
+returnValue=$(containsElement "$logName" "${validLogNames[@]}")
+
+if [ $returnValue == "1" ]; then
 	printError $scriptName "Invalid log name: '$logName'"
 	echo
 	printUsage $usageMessage
