@@ -36,10 +36,13 @@
 #include <locale.h>
 
 #include "org/devopsbroker/adt/listarray.h"
-#include "org/devopsbroker/io/pipe.h"
+#include "org/devopsbroker/io/async.h"
+#include "org/devopsbroker/io/filebuffer.h"
 #include "org/devopsbroker/lang/error.h"
-#include "org/devopsbroker/lang/system.h"
 #include "org/devopsbroker/log/logline.h"
+#include "org/devopsbroker/memory/memorypool.h"
+#include "org/devopsbroker/memory/pagepool.h"
+#include "org/devopsbroker/memory/slabpool.h"
 #include "org/devopsbroker/text/linebuffer.h"
 #include "org/devopsbroker/text/regex.h"
 
@@ -52,6 +55,9 @@
 
 // ═══════════════════════════ Function Declarations ══════════════════════════
 
+static void initSyslog(AIOContext *aioContext, AIOFile *aioFile, FileBufferList *fileBufferList);
+static void cleanUpSyslog(AIOFile *aioFile, FileBufferList *fileBufferList);
+
 static void filterInputLogLine(LogLine *logLine);
 static void filterOutputLogLine(LogLine *logLine);
 
@@ -61,13 +67,16 @@ static void filterOutputLogLine(LogLine *logLine);
 ListArray *inputLogLineList;
 ListArray *outputLogLineList;
 
-// dmesg path and argument list
-const char *dmesg = "/bin/dmesg";
-char *const argList[] = { "/bin/dmesg", "-t", NULL };
-
 // ══════════════════════════════════ main() ══════════════════════════════════
 
 int main(int argc, char *argv[]) {
+	AIOContext     aioContext;
+	AIOFile        aioFile;
+	FileBufferList fileBufferList;
+	FileBuffer    *fileBuffer;
+	int64_t        dataLength;
+	Line           syslogLine;
+	Line          *linePtr = NULL;
 
 	// For a list of all supported locales, try "locale -a" from the command-line
 	setlocale(LC_ALL, "C.UTF-8");
@@ -81,43 +90,53 @@ int main(int argc, char *argv[]) {
 
 	// Compile the BLOCK header regular expression
 	regex_t regExpr;
-	b395ed5f_compileRegExpr(&regExpr, "^\\[.* BLOCK\\] ", REG_EXTENDED);
+	b395ed5f_compileRegExpr(&regExpr, "\\[.* BLOCK\\] ", REG_EXTENDED);
 
-	// Initialize the LineBuffer
-	String *line = NULL;
-	LineBuffer lineBuffer;
-	c196bc72_initLineBuffer(&lineBuffer);
+	// Initialize the syslog file handling
+	initSyslog(&aioContext, &aioFile, &fileBufferList);
 
-	// Execute dmesg
-	Pipe pipe;
-	const pid_t child = c16819a0_execute_pipe("/bin/dmesg", argList, &pipe);
+	// Process /var/log/syslog file
+	dataLength = aioFile.fileSize;
 
-	// Check for a firewall BLOCK header
-	int numBytes = c196bc72_populateLineBuffer(&lineBuffer, *pipe.read);
-	while (numBytes != END_OF_FILE) {
-		line = c196bc72_getLine(&lineBuffer);
+	while (dataLength > 0) {
+		ce97d170_readFileBufferList(&aioFile, &fileBufferList, dataLength);
+		fileBuffer = fileBufferList.values[0];
 
-		while (line != NULL) {
-			// Check for a firewall BLOCK header
-			if (b395ed5f_matchRegExpr(&regExpr, line->value, 0)) {
-				b45c9f7e_initLogLine(&logLine, line);
+		while (fileBuffer != NULL) {
+			dataLength -= fileBuffer->numBytes;
+			linePtr = c196bc72_getLineFromFileBuffer(&syslogLine, fileBuffer);
 
-				if (*logLine.in) {
-					filterInputLogLine(&logLine);
-				} else {
-					filterOutputLogLine(&logLine);
+			while (linePtr != NULL) {
+				fileBuffer->dataOffset += (linePtr->length + 1);
+
+				// Check for a firewall BLOCK header
+				if (b395ed5f_matchRegExpr(&regExpr, linePtr->value, 0)) {
+					b45c9f7e_initLogLine(&logLine, linePtr);
+
+					if (*logLine.in) {
+						filterInputLogLine(&logLine);
+					} else {
+						filterOutputLogLine(&logLine);
+					}
 				}
+
+				linePtr = c196bc72_getLineFromFileBuffer(&syslogLine, fileBuffer);
 			}
 
-			line = c196bc72_getLine(&lineBuffer);
-		}
+			fileBuffer = fileBuffer->next;
 
-		numBytes = c196bc72_populateLineBuffer(&lineBuffer, *pipe.read);
+			if (fileBuffer == NULL)  {
+				ce97d170_resetFileBufferList(&fileBufferList, f502a409_releasePage);
+			}
+		}
 	}
 
-	// Close the read side of the pipe and wait for child process to finish
-	c31ab0c3_closeRead(&pipe);
-	c16819a0_waitForChild(child);
+	// Clean up the AIOContext
+	f1207515_cleanUpAIOContext(&aioContext);
+	cleanUpSyslog(&aioFile, &fileBufferList);
+	b86b2c8d_destroyMemoryPool(false);
+	f502a409_destroyPagePool(false);
+	b426145b_destroySlabPool(false);
 
 	// Free memory allocated for the regular expression
 	b395ed5f_freeRegExpr(&regExpr);
@@ -185,6 +204,34 @@ int main(int argc, char *argv[]) {
 }
 
 // ═════════════════════════ Function Implementations ═════════════════════════
+
+void initSyslog(AIOContext *aioContext, AIOFile *aioFile, FileBufferList *fileBufferList) {
+	FileStatus fileStatus;
+
+	// 1. Initialize the FileBufferList struct
+	ce97d170_initFileBufferList(fileBufferList);
+
+	// 2. Initialize the AIOContext
+	f1207515_initAIOContext(aioContext, 8);
+
+	// 3. Initialize the AIOFile struct
+	f1207515_initAIOFile(aioContext, aioFile, "/var/log/syslog");
+
+	// 4. Open the file
+	f1207515_open(aioFile, FOPEN_READONLY, 0);
+
+	// 5. Retrieve the file size
+	e2f74138_getDescriptorStatus(aioFile->fd, &fileStatus);
+	aioFile->fileSize = fileStatus.st_size;
+}
+
+static void cleanUpSyslog(AIOFile *aioFile, FileBufferList *fileBufferList) {
+	// 1. Close the file
+	f1207515_cleanUpAIOFile(aioFile);
+
+	// 2. Clean up the FileBufferList struct
+	ce97d170_cleanUpFileBufferList(fileBufferList, f502a409_releasePage);
+}
 
 /*
  * IN=enp4s0 OUT= MAC=ff:ff:ff:ff:ff:ff:aa:bb:cc:dd:ee:ff:11:00 SRC=192.168.1.110 DST=192.168.1.255 PROTO=UDP SPT=59391 DPT=15600
