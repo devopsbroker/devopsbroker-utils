@@ -136,6 +136,10 @@ int main(int argc, char *argv[]) {
 				}
 
 				fileBuffer = fileBuffer->next;
+
+				if (fileBuffer == NULL)  {
+					ce97d170_resetFileBufferList(&fileBufferList, f502a409_releasePage);
+				}
 			}
 		}
 
