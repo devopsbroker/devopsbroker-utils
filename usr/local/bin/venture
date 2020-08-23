@@ -100,7 +100,7 @@ function showHelp() {
 		printUsage 'false' "$scriptName enum ${gold}BRANCH_NAME"
 		printUsage 'false' "$scriptName fileinfo ${gold}BRANCH_NAME"
 		printUsage 'false' "$scriptName new ${gold}COMMIT_NUM FILE"
-		printUsage 'false' "$scriptName timestamp ${gold}FILE"
+		printUsage 'false' "$scriptName timestamp"
 		printUsage 'false' "$scriptName website ${gold}[FILE]"
 		echo
 	elif [ "$command" == 'bashcomplete' ]; then
@@ -221,6 +221,11 @@ if [ "$command" == 'help' ]; then
 	command=${2:-}
 fi
 
+if [ "$showCommandHelp" == 'true' ]; then
+	showHelp
+	exit 0
+fi
+
 # Display error if invalid command
 returnValue=$(containsElement "$command" "${validCommands[@]}")
 
@@ -230,11 +235,6 @@ if [ $returnValue == "1" ]; then
 	printUsage "$scriptName ${gold}[help]${yellow} COMMAND ${gold}[OPTION...]"
 
 	exit 1
-fi
-
-if [ "$showCommandHelp" == 'true' ]; then
-	showHelp
-	exit 0
 fi
 
 # Process command-line options
