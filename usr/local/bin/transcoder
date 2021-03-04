@@ -1,0 +1,360 @@
+#!/bin/bash
+
+#
+# transcoder - DevOpsBroker utility for transcoding audio and video with FFMpeg
+#
+# Copyright (C) 2021 Edward Smith <edwardsmith@devopsbroker.org>
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# -----------------------------------------------------------------------------
+# Developed on Ubuntu 18.04.2 LTS running kernel.osrelease = 4.18.0-18
+#
+# -----------------------------------------------------------------------------
+#
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Preprocessing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Load /etc/devops/ansi.conf if ANSI_CONFIG is unset
+if [ -z "$ANSI_CONFIG" ] && [ -f /etc/devops/ansi.conf ]; then
+	source /etc/devops/ansi.conf
+fi
+
+${ANSI_CONFIG?"[1;91mCannot load '/etc/devops/ansi.conf': No such file[0m"}
+
+# Load /etc/devops/exec.conf if EXEC_CONFIG is unset
+if [ -z "$EXEC_CONFIG" ] && [ -f /etc/devops/exec.conf ]; then
+	source /etc/devops/exec.conf
+fi
+
+${EXEC_CONFIG?"[1;91mCannot load '/etc/devops/exec.conf': No such file[0m"}
+
+# Load /etc/devops/functions.conf if FUNC_CONFIG is unset
+if [ -z "$FUNC_CONFIG" ] && [ -f /etc/devops/functions.conf ]; then
+	source /etc/devops/functions.conf
+fi
+
+${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m"}
+
+# Load /etc/devops/functions-io.conf if FUNC_IO_CONFIG is unset
+if [ -z "$FUNC_IO_CONFIG" ] && [ -f /etc/devops/functions-io.conf ]; then
+	source /etc/devops/functions-io.conf
+fi
+
+${FUNC_IO_CONFIG?"[1;91mCannot load '/etc/devops/functions-io.conf': No such file[0m"}
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Robustness ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+set -o errexit                 # Exit if any statement returns a non-true value
+set -o nounset                 # Exit if use an uninitialised variable
+set -o pipefail                # Exit if any statement in a pipeline returns a non-true value
+IFS=$'\n\t'                    # Default the Internal Field Separator to newline and tab
+
+scriptName='transcoder'
+
+################################## Functions ##################################
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     processTranscodingParams
+# Description:  Performs processing of the parameters for the default transcode
+#               command
+# -----------------------------------------------------------------------------
+function processTranscodingParams() {
+	IS_AMD_ACCEL=0
+
+	while [[ $# -gt 0 ]]; do
+		HAS_PARAMS=1
+		key="$1"
+
+		case $key in
+			-hw|--hwaccel)
+				if [ "$2" == 'amd' ]; then
+					IS_AMD_ACCEL=1
+					HW_DEVICE=$($EXEC_LS /dev/dri/render*)
+					HWACCEL=(-hwaccel vaapi -hwaccel_device "$HW_DEVICE" -hwaccel_output_format vaapi)
+				else
+					HWACCEL='bad'
+					printError $scriptName "Invalid hardware acceleration parameter: '$2'"
+					echo
+					printUsage "$scriptName $key { amd }"
+
+					exit 1
+				fi
+
+				shift # past argument
+				shift # past value
+				;;
+			-i|--input)
+				INPUT_FILE="$2"
+
+				errorMessage=$(isValidFile $scriptName "$INPUT_FILE")
+
+				# Display error if input file parameter is missing or invalid
+				if [ "$errorMessage" != '0' ]; then
+					echo "$errorMessage"
+					echo
+					printUsage "$scriptName -i INPUT_FILE"
+
+					exit 1
+				fi
+
+				shift # past argument
+				shift # past value
+				;;
+			-vcodec)
+				if [ "$2" == 'hevc' ]; then
+					if [ $IS_AMD_ACCEL -eq 1 ]; then
+						VID_ENCODER=(-map 0:v -vcodec hevc_vaapi -rc_mode 3 -profile:v main -level 4.1 -b:v 4000k -maxrate:v 6000k)
+					else
+						VID_ENCODER=(-map 0:v -vcodec hevc)
+					fi
+				else
+					VID_ENCODER='bad'
+					printError $scriptName "Invalid video encoder parameter: '$2'"
+					echo
+					printUsage "$scriptName -vcodec { hevc }"
+
+					exit 1
+				fi
+
+				shift # past argument
+				shift # past value
+				;;
+			-acodec)
+				if [ "$2" == 'ac3' ]; then
+					AUD_ENCODER=(-map 0:a:0 -c:a:0 ac3 -b:a:0 640k -map 0:a:0 -strict -2 -ac:a:1 2 -c:a:1 aac -b:a:1 256k)
+				elif [ "$2" == 'copy' ]; then
+					AUD_ENCODER=(-map 0:a:0 -c:a:0 copy -map 0:a:0 -strict -2 -ac:a:1 2 -c:a:1 aac -b:a:1 256k)
+				else
+					AUD_ENCODER='bad'
+					printError $scriptName "Invalid audio encoder parameter: '$2'"
+					echo
+					printUsage "$scriptName -acodec { ac3 | copy }"
+
+					exit 1
+				fi
+
+				shift # past argument
+				shift # past value
+				;;
+			-o|--output)
+				OUTPUT_FILE="$2"
+
+				shift # past argument
+				shift # past value
+				;;
+			*)  # unknown option
+				shift # past argument
+				;;
+		esac
+	done
+
+	if [ $HAS_PARAMS -eq 1 ]; then
+		# Display error if video encoder parameter is missing
+		if [ -z "$VID_ENCODER" ]; then
+			printError $scriptName 'Missing video encoder parameter'
+			echo
+			printUsage "$scriptName -vcodec { hevc }"
+
+			exit 1
+		fi
+
+		# Display error if audio encoder parameter is missing
+		if [ -z "$AUD_ENCODER" ]; then
+			printError $scriptName 'Missing audio encoder parameter'
+			echo
+			printUsage "$scriptName -acodec { ac3 | copy }"
+
+			exit 1
+		fi
+
+		# Display error if output file parameter is missing
+		if [ -z "$OUTPUT_FILE" ]; then
+			printError $scriptName 'Missing output file parameter'
+			echo
+			printUsage "$scriptName -o OUTPUT_FILE"
+
+			exit 1
+		fi
+	fi
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     validateInfo
+# Description:  Performs validation for the information command
+#
+# Parameters:
+#   sourceFile  The source file
+# -----------------------------------------------------------------------------
+function validateInfo() {
+	errorMessage=$(isValidFile $scriptName "$sourceFile")
+
+	# Display error if source file parameter is missing or invalid
+	if [ "$errorMessage" != '0' ]; then
+		echo "$errorMessage"
+		echo
+		printUsage "$scriptName $command SOURCE"
+
+		exit 1
+	fi
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     validateSourceDestFiles
+# Description:  Performs validation for the source and destination files
+#
+# Parameters:
+#   sourceFile  The source file
+#   destFile    The destination file
+# -----------------------------------------------------------------------------
+function validateSourceDestFiles() {
+	# Display error if source file parameter is missing
+	if [ -z "$sourceFile" ]; then
+		printError $scriptName 'Missing source file parameter'
+		echo
+		printUsage "$scriptName $command $subcommand SOURCE DEST"
+
+		exit 1
+	fi
+
+	errorMessage=$(isValidFile $scriptName "$sourceFile")
+
+	# Display error if source file parameter is missing or invalid
+	if [ "$errorMessage" != '0' ]; then
+		echo "$errorMessage"
+		echo
+		printUsage "$scriptName $command $subcommand SOURCE DEST"
+
+		exit 1
+	fi
+
+	# Display error if destination file parameter is missing
+	if [ -z "$destFile" ]; then
+		printError $scriptName 'Missing destination file parameter'
+		echo
+		printUsage "$scriptName $command $subcommand $sourceFile DEST"
+
+		exit 1
+	fi
+}
+
+# ¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯
+# Function:     validateSubCommand
+# Description:  Performs validation for the subcommand of a command
+#
+# Parameters:
+#   command     The command
+#   subcommand  The subcommand
+# -----------------------------------------------------------------------------
+function validateSubCommand() {
+	if [[ ! "$subcommand" =~ ^(extract)$ ]]; then
+		printError $scriptName "Invalid subcommand: '$subcommand'"
+		echo
+		printUsage "$scriptName $command { extract } SOURCE DEST"
+
+		exit 1
+	fi
+}
+
+################################## Variables ##################################
+
+## Bash exec variables
+EXEC_FFMPEG=/usr/bin/ffmpeg
+EXEC_FFPROBE=/usr/bin/ffprobe
+
+## Options
+command="${1:-}"
+subcommand=''
+sourceFile=''
+destFile=''
+
+HAS_PARAMS=0
+HWACCEL=''
+INPUT_FILE=''
+VID_ENCODER=''
+AUD_ENCODER=''
+OUTPUT_FILE=''
+
+## Variables
+export TMPDIR=${TMPDIR:-'/tmp'}
+
+validCommands=('audio' 'info' 'video')
+validSubCommands=('extract')
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Display usage if no parameters given
+if [ -z "$command" ]; then
+	printUsage "$scriptName COMMAND [SUBCOMMAND] SOURCE [DEST]"
+	exit 1
+fi
+
+processTranscodingParams "$@"
+
+if [ $HAS_PARAMS -eq 1 ]; then
+	command="transcode"
+else
+	# Display error if invalid command
+	if [ $command ] && [ $(containsElement "$command" "${validCommands[@]}") != '0' ]; then
+		printError $scriptName "Invalid command: '$command'"
+		echo
+		printUsage "$scriptName COMMAND [SUBCOMMAND] SOURCE [DEST]"
+
+		exit 1
+	fi
+fi
+
+################################### Actions ###################################
+
+if [ $command == 'audio' ]; then
+	subcommand="${2:-}"
+	validateSubCommand
+
+	if [ $subcommand == 'extract' ]; then
+		sourceFile="${3:-}"
+		destFile="${4:-}"
+		validateSourceDestFiles
+
+		$EXEC_FFMPEG -i "$sourceFile" -vn -acodec copy "$destFile"
+	fi
+
+elif [ $command == 'info' ]; then
+	sourceFile="${2:-}"
+	validateInfo
+
+	$EXEC_FFPROBE -v error -show_format -show_streams "$sourceFile"
+
+elif [ $command == 'transcode' ]; then
+	if [ -z "$HWACCEL" ]; then
+		$EXEC_FFMPEG -i $INPUT_FILE $VID_ENCODER $AUD_ENCODER $OUTPUT_FILE
+	else
+		echo $EXEC_FFMPEG "${HWACCEL[@]}" -i "$INPUT_FILE" "${VID_ENCODER[@]}" "${AUD_ENCODER[@]}" "$OUTPUT_FILE"
+		$EXEC_FFMPEG "${HWACCEL[@]}" -i "$INPUT_FILE" "${VID_ENCODER[@]}" "${AUD_ENCODER[@]}" "$OUTPUT_FILE"
+	fi
+
+elif [ $command == 'video' ]; then
+	subcommand="${2:-}"
+	validateSubCommand
+
+	if [ $subcommand == 'extract' ]; then
+		sourceFile="${3:-}"
+		destFile="${4:-}"
+		validateSourceDestFiles
+
+		$EXEC_FFMPEG -i "$sourceFile" -an -vcodec copy "$destFile"
+	fi
+
+fi
+
+exit 0
