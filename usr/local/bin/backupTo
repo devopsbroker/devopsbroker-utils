@@ -1,0 +1,148 @@
+#!/usr/bin/bash
+
+#
+# backupTo - DevOpsBroker utility for backing up a Linux machine to a folder
+#
+# Copyright (C) 2025 Edward Smith <edwardsmith@devopsbroker.org>
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# -----------------------------------------------------------------------------
+# Developed on Ubuntu Ubuntu 24.04.2 LTS running kernel.osrelease = 6.8.0-71
+#
+# Backup a Linux machine to a folder.
+#
+# Parameters:
+#   $1: The name of the directory to backup to
+# -----------------------------------------------------------------------------
+#
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Preprocessing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Load /etc/devops/ansi.conf if ANSI_CONFIG is unset
+if [ -z "$ANSI_CONFIG" ] && [ -f /etc/devops/ansi.conf ]; then
+	source /etc/devops/ansi.conf
+fi
+
+${ANSI_CONFIG?"[1;91mCannot load '/etc/devops/ansi.conf': No such file[0m"}
+
+# Load /etc/devops/exec.conf if EXEC_CONFIG is unset
+if [ -z "$EXEC_CONFIG" ] && [ -f /etc/devops/exec.conf ]; then
+	source /etc/devops/exec.conf
+fi
+
+${EXEC_CONFIG?"[1;91mCannot load '/etc/devops/exec.conf': No such file[0m"}
+
+# Load /etc/devops/functions.conf if FUNC_CONFIG is unset
+if [ -z "$FUNC_CONFIG" ] && [ -f /etc/devops/functions.conf ]; then
+	source /etc/devops/functions.conf
+fi
+
+${FUNC_CONFIG?"[1;91mCannot load '/etc/devops/functions.conf': No such file[0m"}
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Robustness ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+#set -o errexit                 # Exit if any statement returns a non-true value
+set -o nounset                 # Exit if use an uninitialised variable
+#set -o pipefail                # Exit if any statement in a pipeline returns a non-true value
+IFS=$'\n\t'                    # Default the Internal Field Separator to newline and tab
+
+scriptName='backupTo'
+
+################################## Variables ##################################
+
+## Bash exec variables
+EXEC_DPKG=/usr/bin/dpkg
+EXEC_HOSTNAME=/usr/bin/hostname
+
+## Options
+directory="${1:-}"
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ OPTION Parsing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Display usage if no parameters given
+if [ -z "$directory" ]; then
+	printUsage "$scriptName TO_DIR"
+	echo
+
+	exit 1
+fi
+
+if [ ! -d "$directory" ]; then
+	printError $scriptName "Cannot access '$directory': No such directory"
+	echo
+	printUsage "$scriptName TO_DIR"
+
+	exit 1
+fi
+
+# If the directory does not end with a trailing slash, add one
+if ! [[ "$directory" =~ /$ ]]; then
+	directory+="/"
+fi
+
+################################### Actions ###################################
+
+# Place the backup under the hostname of the Linux box being backed up
+hostname=$($EXEC_HOSTNAME)
+directory+="$hostname"
+
+if [ ! -d "$directory" ]; then
+	$EXEC_MKDIR "$directory"
+fi
+
+# Backup the /etc folder
+if [ ! -d "$directory/etc" ]; then
+	$EXEC_MKDIR "$directory/etc"
+fi
+
+$EXEC_RSYNC -aAXv /etc/ "$directory/etc/"
+
+# Backup the /home folder
+if [ ! -d "$directory/home" ]; then
+	$EXEC_MKDIR "$directory/home"
+fi
+
+$EXEC_RSYNC -aAXv /home/ "$directory/home/"
+
+# Backup the /var/log folder
+if [ ! -d "$directory/var" ]; then
+	$EXEC_MKDIR "$directory/var"
+fi
+
+if [ ! -d "$directory/var/log" ]; then
+	$EXEC_MKDIR "$directory/var/log"
+fi
+
+$EXEC_RSYNC -aAXv /var/log/ "$directory/var/log/"
+
+# Backup the /usr/local folder
+if [ ! -d "$directory/usr" ]; then
+	$EXEC_MKDIR "$directory/usr"
+fi
+
+if [ ! -d "$directory/usr/local" ]; then
+	$EXEC_MKDIR "$directory/usr/local"
+fi
+
+$EXEC_RSYNC -aAXv /usr/local/ "$directory/usr/local/"
+
+# Backup the /opt folder
+if [ ! -d "$directory/opt" ]; then
+	$EXEC_MKDIR "$directory/opt"
+fi
+
+$EXEC_RSYNC -aAXv /opt/ "$directory/opt/"
+
+exit 0

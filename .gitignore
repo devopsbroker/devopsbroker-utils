@@ -56,6 +56,13 @@ C/bin/
 **/build/pkg-debian/
 **/build/tar-test/
 
+# Project files
+.cproject
+.project
+
+# Symlinks
+C/src/org
+
 # Whitelist files
 !.keep
 !makefile
