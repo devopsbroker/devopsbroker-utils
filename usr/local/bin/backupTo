@@ -145,4 +145,8 @@ fi
 
 $EXEC_RSYNC -aAXv /opt/ "$directory/opt/"
 
+# Backup the list of installed packages
+
+$EXEC_DPKG --get-selections > "$directory/installed-packages.txt"
+
 exit 0
